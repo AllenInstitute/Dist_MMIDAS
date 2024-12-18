@@ -40,11 +40,9 @@ from mmidas._utils import (
     confmat_normalize,
 )
 
-# last run: 35 (so start at 36)
 
-
-def bytes_to_mb(x):
-    return x / 1e6
+def to_mb(bytes):
+    return bytes / 1e6
 
 
 def is_master(rank):
@@ -100,13 +98,6 @@ def print_val_loss(val_loss, val_loss_rec, rank):
             )
         )
 
-
-def unwrap[T](x: Optional[T]) -> T:
-    if x is None:
-        raise ValueError("error: expected non-None value")
-    return x
-
-
 def get_device(device: Optional[str | int] = None) -> th.device:
     match device:
         case "cpu" | "mps" as d:
@@ -158,6 +149,7 @@ class cpl_mixVAE:
         eps=1e-8,
         save_flag=True,
         load_weights=True,
+        augmenter=None,
     ):
         """
         Initialized the cpl_mixVAE class.
@@ -169,26 +161,17 @@ class cpl_mixVAE:
             eps: a small constant value to fix computation overflow.
             save_flag: a boolean variable, if True, the model is saved.
         """
+        if saving_folder:
+            print("warning: saving folder parameter deprecated")
+        if aug_file:
+            print("warning: aug_file parameter deprecated")
 
         self.eps = eps
         self.save = save_flag
-        self.folder = saving_folder
-        self.aug_file = aug_file
-        self.device = device
-        self.models: list[dict[str, nn.Module | Optimizer]] = []
-
         self.device = get_device(device)
+        self.netA = augmenter.to(self.device) if augmenter else None
 
-        if aug_file:
-            self.aug_model, self.aug_param, netA = mk_augmenter(aug_file, load_weights)
-            self.netA = netA.to(self.device).eval()
-        else:
-            self.aug_model, self.aug_param, self.netA = None, None, None
-
-    # [[0.7, 0.2, 0.1], [0.5, 0.4, 0.1], [0.3, 0.3, 0.4]]
-    # -> [[1, 0, 0], [1, 0, 0], [0, 0, 1]]
-    # -> [0, 0, 2]
-    # -> [0.67, 0, 0.33]
+        self.n_pr = 0
 
     def init_model(
         self,
@@ -273,47 +256,6 @@ class cpl_mixVAE:
         self.model = self.model.to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
-        if len(trained_model) > 0:
-            print("Load the pre-trained model")
-            # if you wish to load another model for evaluation
-            loaded_file = torch.load(trained_model, map_location="cpu")
-            self.model.load_state_dict(loaded_file["model_state_dict"])
-            self.optimizer.load_state_dict(loaded_file["optimizer_state_dict"])
-            self.init = False
-            self.n_pr = n_pr
-        else:
-            self.init = True
-            self.n_pr = 0
-
-    def append(self, c: VAEConfig):
-        model = mixVAE_model(
-            input_dim=c.input_dim,
-            fc_dim=c.fc_dim,
-            n_categories=c.n_categories,
-            state_dim=c.state_dim,
-            lowD_dim=c.lowD_dim,
-            x_drop=c.x_drop,
-            s_drop=c.s_drop,
-            n_arm=c.n_arm,
-            lam=c.lam,
-            lam_pc=c.lam_pc,
-            tau=c.tau,
-            beta=c.beta,
-            hard=c.hard,
-            variational=c.variational,
-            device=self.device,
-            eps=self.eps,
-            ref_prior=c.ref_prior,
-            momentum=c.momentum,
-            loss_mode=c.mode,
-        ).to(self.device)
-        optimizer = optim.Adam(model.parameters(), lr=c.lr)
-        if c.trained_model:
-            loaded_file = th.load(c.trained_model, map_location="cpu")
-            model.load_state_dict(loaded_file["model_state_dict"])
-            optimizer.load_state_dict(loaded_file["optimizer_state_dict"])
-        self.models.append({"model": model, "opt": optimizer})
-
     def load_model(self, trained_model):
         loaded_file = torch.load(trained_model, map_location="cpu")
         self.model.load_state_dict(loaded_file["model_state_dict"])
@@ -333,7 +275,7 @@ class cpl_mixVAE:
         rank=None,
         run=None,
         ws=1,
-        good_enuf_consensus=0.75,
+        good_enough=0.75,
     ):
         """
         run the training of the cpl-mixVAE with the pre-defined parameters/settings
@@ -353,6 +295,13 @@ class cpl_mixVAE:
         return
             data_file_id: the output dictionary.
         """
+        dirname = f"K{self.n_categories}_S{self.state_dim}_AUG{self.netA is not None}_LR{self.optimizer.param_groups[0]['lr']}_A{self.n_arm}_B{train_loader.batch_size}_E{n_epoch}_Ep{n_epoch_p}"
+        dirname = "results/" + dirname
+        print(f" -- making directory directory: {dirname}")
+        os.makedirs(dirname, exist_ok=True)
+        os.makedirs(f"{dirname}/model", exist_ok=True)
+
+
         if rank is None:
             rank = self.device
 
@@ -394,225 +343,179 @@ class cpl_mixVAE:
         fc_sigma = fc_sigma.to(rank)
         f6_mask = f6_mask.to(rank)
 
-        if self.init:
-            print("training started")
-            epoch_times = []
-            for e in trange(E):
-                loss = th.zeros(2, device=rank)
-                loss_joint = th.zeros(1, device=rank)
-                loss_rec = th.zeros(A, device=rank)
-                c_l2_dist = th.zeros(1, device=rank)
-                c_dist = th.zeros(1, device=rank)
-                c_ent = th.zeros(1, device=rank)
-                t0 = time.time()
-                cs_train = [[] for _ in range(A)]
+        print("training started")
+        epoch_times = []
+        for e in trange(E):
+            loss = th.zeros(2, device=rank)
+            loss_joint = th.zeros(1, device=rank)
+            loss_rec = th.zeros(A, device=rank)
+            c_l2_dist = th.zeros(1, device=rank)
+            c_dist = th.zeros(1, device=rank)
+            c_ent = th.zeros(1, device=rank)
+            t0 = time.time()
+            cs_train = [[] for _ in range(A)]
 
-                probs_train = [[] for _ in range(A)]
-                probs_noaug = [[] for _ in range(A)]
-                probs_test = [[] for _ in range(A)]
+            probs_train = [[] for _ in range(A)]
+            probs_noaug = [[] for _ in range(A)]
+            probs_test = [[] for _ in range(A)]
 
-                self.model.train()
-                for x, n in train_loader:
-                    x = x.to(rank)
-                    n = n.to(int)
+            self.model.train()
+            for x, n in train_loader:
+                x = x.to(rank)
+                n = n.to(int)
 
-                    tt = time.time()
+                tt = time.time()
 
-                    # with th.no_grad(): # Yeganeh changed this line
-                    if self.aug_file:
-                        xs = self.netA(x.expand(A, -1, -1), True, 0.1)[1]
-                    else:
-                        xs = x.expand(A, -1, -1)
+                # with th.no_grad(): # Yeganeh changed this line
+                if self.netA:
+                    xs = self.netA(x.expand(A, -1, -1), True, 0.1)[1]
+                else:
+                    xs = x.expand(A, -1, -1)
 
-                    if self.ref_prior:
-                        c_bin = th.tensor(c_onehot[n, :], dtype=th.float, device=rank)
-                        prior_c = th.tensor(c_p[n, :], dtype=th.float, device=rank)
-                    else:
-                        c_bin = 0.0
-                        prior_c = 0.0
+                if self.ref_prior:
+                    c_bin = th.tensor(c_onehot[n, :], dtype=th.float, device=rank)
+                    prior_c = th.tensor(c_p[n, :], dtype=th.float, device=rank)
+                else:
+                    c_bin = 0.0
+                    prior_c = 0.0
 
-                    self.optimizer.zero_grad()
-                    x_recs, _, _, _, cs, _, c_smps, s_means, s_logvars, _ = self.model(
-                        xs, self.temp, prior_c
-                    )
-
-                    # for a in range(A):
-                    #     cs_train[a].append(
-                    #         cs[a]
-                    #         .cpu()
-                    #         .view(cs[a].size()[0], C)
-                    #         .argmax(dim=1)
-                    #         .detach()
-                    #         .numpy()
-                    #     )
-                    (
-                        _loss,
-                        _loss_rec,
-                        _loss_joint,
-                        _c_ent,
-                        _c_dist,
-                        _c_l2_dist,
-                        _,
-                        _,
-                        _,
-                    ) = self.model.loss(
-                        x_recs, [], [], xs, s_means, s_logvars, cs, c_smps, c_bin
-                    )
-                    mem: float = bytes_to_mb(th.cuda.memory_allocated())
-                    _loss.backward()
-                    self.optimizer.step()
-
-                    # with th.no_grad(): # Yeganeh changed this line
-                    # xs_noaug = x.expand(A, -1, -1)
-                    # _, _, _, _, cs_noaug, _, _, _, _, _ = self.model(xs_noaug, self.temp, prior_c)
-
-                    loss[0] += _loss.item()
-                    loss[1] += 1
-                    loss_joint += _loss_joint
-                    c_l2_dist += _c_l2_dist
-                    c_dist += _c_dist
-                    c_ent += _c_ent
-                    loss_rec += _loss_rec / D
-                    for a in range(A):
-                        probs_train[a].append(to_np(cs[a]))
-                        # probs_noaug[a].append(to_np(cs_noaug[a]))
-
-                if ws > 1:
-                    dist.all_reduce(loss, op=dist.ReduceOp.SUM)
-                    dist.all_reduce(loss_rec, op=dist.ReduceOp.SUM)
-                    dist.all_reduce(c_dist, op=dist.ReduceOp.SUM)
-
-                losses.append(loss[0].item() / loss[1].item())
-                loss_joints.append(loss_joint.item() / Bs)
-                c_ents.append(c_ent.item() / Bs)
-                c_l2_dists.append(c_l2_dist.item() / Bs)
-                c_dists.append(c_dist.item() / loss[1].item())
-
-                for a in range(A):
-                    loss_recs[a].append(loss_rec[a].item() / loss[1].item())
-
-                # labels = [
-                #     np.ravel(compute_labels(np.array(probs_noaug[a]))) for a in range(A)
-                # ]
-
-                # Yeganeh changed this part
-                # consensus = []
-                # for a in range(A):
-                #     for b in range(a + 1, A):
-                #         consensus.append(
-                #             confmat_mean(
-                #                 confmat_normalize(
-                #                     compute_confmat(labels[a], labels[b], C)
-                #                 )
-                #             )
-                #         )
-                # consensus_train.append(np.mean(np.array(consensus)))
-
-                # Yeganeh added this part ----------------------------------------------------
-                labels_aug = [
-                    np.ravel(classify(np.array(probs_train[a]))) for a in range(A)
-                ]
-                consensus = []
-                for a in range(A):
-                    for b in range(a + 1, A):
-                        consensus.append(
-                            confmat_mean(
-                                confmat_normalize(
-                                    compute_confmat(labels_aug[a], labels_aug[b], C)
-                                )
-                            )
-                        )
-                consensus_aug.append(np.mean(np.array(consensus)))
-                # -----------------------------------------------------------------------------
-
-                _time = time.time() - t0
-
-                # Yeganeh changed the print
-                # print(
-                #     f"epoch {e} | loss: {losses[-1]:.2f} | rec: {loss_recs[0][-1]:.2f} | joint: {loss_joints[-1]} | entropy: {c_ents[-1]:.2f} | distance: {c_dists[-1]:.2f} | l2 distance: {c_l2_dists[-1]:.2f} | train-cns: {consensus_train[-1]:.2f} | time: {_time:.2f} | avg time: {np.mean(epoch_times):.2f} | mem: {mem:.2f}  | ",
-                #     end="",
-                # )
-
-                print(
-                    f"epoch {e} | loss: {losses[-1]:.2f} | rec: {loss_recs[0][-1]:.2f} | distance: {c_dists[-1]:.2f} | l2 distance: {c_l2_dists[-1]:.2f} | aug-cns: {consensus_aug[-1]:.2f} | time: {_time:.2f} | avg time: {np.mean(epoch_times):.2f} | ",
-                    end="",
+                self.optimizer.zero_grad()
+                x_recs, _, _, _, cs, _, c_smps, s_means, s_logvars, _ = self.model(
+                    xs, self.temp, prior_c
                 )
 
-                if run:
-                    run.log(
-                        {
-                            "train/total-loss": losses[-1],
-                            "train/joint-loss": loss_joints[-1],
-                            "train/negative-joint-entropy": c_ents[-1],
-                            "train/simplex-distance": c_dists[-1],
-                            "train/l2-distance": c_l2_dists[-1],
-                            "train/time": _time,
-                            "train/mem": mem,
-                            # "train/consensus": consensus_train[-1],
-                            "train/consensus_aug": consensus_aug[-1],
-                            **dict(
-                                map(
-                                    lambda a: (f"train/rec-loss{a}", loss_recs[a][-1]),
-                                    range(A),
-                                )
-                            ),
-                        }
-                    )
+                # for a in range(A):
+                #     cs_train[a].append(
+                #         cs[a]
+                #         .cpu()
+                #         .view(cs[a].size()[0], C)
+                #         .argmax(dim=1)
+                #         .detach()
+                #         .numpy()
+                #     )
+                (
+                    _loss,
+                    _loss_rec,
+                    _loss_joint,
+                    _c_ent,
+                    _c_dist,
+                    _c_l2_dist,
+                    _,
+                    _,
+                    _,
+                ) = self.model.loss(
+                    x_recs, [], [], xs, s_means, s_logvars, cs, c_smps, c_bin
+                )
+                mem: float = to_mb(th.cuda.memory_allocated())
+                _loss.backward()
+                self.optimizer.step()
 
-                    # validation
-                self.model.eval()
-                with th.no_grad():
-                    val_loss = 0.0
-                    val_loss_rec = 0.0
-                    if B_val > 1:
-                        for batch_indx, (x, n) in enumerate(
-                            train_loader
-                        ):  # batch index, (data, data index)
-                            x = x.to(rank)
-                            n = n.to(int)
+                # with th.no_grad(): # Yeganeh changed this line
+                # xs_noaug = x.expand(A, -1, -1)
+                # _, _, _, _, cs_noaug, _, _, _, _, _ = self.model(xs_noaug, self.temp, prior_c)
 
-                            xs = [x for _ in range(A)]
+                loss[0] += _loss.item()
+                loss[1] += 1
+                loss_joint += _loss_joint
+                c_l2_dist += _c_l2_dist
+                c_dist += _c_dist
+                c_ent += _c_ent
+                loss_rec += _loss_rec / D
+                for a in range(A):
+                    probs_train[a].append(to_np(cs[a]))
+                    # probs_noaug[a].append(to_np(cs_noaug[a]))
 
-                            if self.ref_prior:
-                                c_bin = th.tensor(
-                                    c_onehot[n, :], dtype=th.float, device=rank
-                                )
-                                prior_c = th.tensor(
-                                    c_p[n, :], dtype=th.float, device=rank
-                                )
-                            else:
-                                c_bin = 0.0
-                                prior_c = 0.0
+            if ws > 1:
+                dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                dist.all_reduce(loss_rec, op=dist.ReduceOp.SUM)
+                dist.all_reduce(c_dist, op=dist.ReduceOp.SUM)
 
-                            (
-                                x_recs,
-                                p_x,
-                                r_x,
-                                _,
-                                cs,
-                                _,
-                                c_smps,
-                                s_means,
-                                s_logvars,
-                                _,
-                            ) = self.model(
-                                x=xs, temp=self.temp, prior_c=prior_c, eval=True
+            losses.append(loss[0].item() / loss[1].item())
+            loss_joints.append(loss_joint.item() / Bs)
+            c_ents.append(c_ent.item() / Bs)
+            c_l2_dists.append(c_l2_dist.item() / Bs)
+            c_dists.append(c_dist.item() / loss[1].item())
+
+            for a in range(A):
+                loss_recs[a].append(loss_rec[a].item() / loss[1].item())
+
+            # labels = [
+            #     np.ravel(compute_labels(np.array(probs_noaug[a]))) for a in range(A)
+            # ]
+
+            # Yeganeh changed this part
+            # consensus = []
+            # for a in range(A):
+            #     for b in range(a + 1, A):
+            #         consensus.append(
+            #             confmat_mean(
+            #                 confmat_normalize(
+            #                     compute_confmat(labels[a], labels[b], C)
+            #                 )
+            #             )
+            #         )
+            # consensus_train.append(np.mean(np.array(consensus)))
+
+            # Yeganeh added this part ----------------------------------------------------
+            labels_aug = [
+                np.ravel(classify(np.array(probs_train[a]))) for a in range(A)
+            ]
+            consensus = []
+            for a in range(A):
+                for b in range(a + 1, A):
+                    consensus.append(
+                        confmat_mean(
+                            confmat_normalize(
+                                compute_confmat(labels_aug[a], labels_aug[b], C)
                             )
+                        )
+                    )
+            consensus_aug.append(np.mean(np.array(consensus)))
+            # -----------------------------------------------------------------------------
 
-                            for a in range(A):
-                                probs_noaug[a].append(to_np(cs[a]))
-                                cs_train[a].append(
-                                    cs[a]
-                                    .cpu()
-                                    .view(cs[a].size()[0], C)
-                                    .argmax(dim=1)
-                                    .detach()
-                                    .numpy()
-                                )
+            _time = time.time() - t0
 
-                    else:
-                        batch_indx = 0
-                        x, n = train_loader.dataset.tensors
+            # Yeganeh changed the print
+            # print(
+            #     f"epoch {e} | loss: {losses[-1]:.2f} | rec: {loss_recs[0][-1]:.2f} | joint: {loss_joints[-1]} | entropy: {c_ents[-1]:.2f} | distance: {c_dists[-1]:.2f} | l2 distance: {c_l2_dists[-1]:.2f} | train-cns: {consensus_train[-1]:.2f} | time: {_time:.2f} | avg time: {np.mean(epoch_times):.2f} | mem: {mem:.2f}  | ",
+            #     end="",
+            # )
+
+            print(
+                f"epoch {e} | loss: {losses[-1]:.2f} | rec: {loss_recs[0][-1]:.2f} | distance: {c_dists[-1]:.2f} | l2 distance: {c_l2_dists[-1]:.2f} | aug-cns: {consensus_aug[-1]:.2f} | time: {_time:.2f} | avg time: {np.mean(epoch_times):.2f} | ",
+                end="",
+            )
+
+            if run:
+                run.log(
+                    {
+                        "train/total-loss": losses[-1],
+                        "train/joint-loss": loss_joints[-1],
+                        "train/negative-joint-entropy": c_ents[-1],
+                        "train/simplex-distance": c_dists[-1],
+                        "train/l2-distance": c_l2_dists[-1],
+                        "train/time": _time,
+                        "train/mem": mem,
+                        # "train/consensus": consensus_train[-1],
+                        "train/consensus_aug": consensus_aug[-1],
+                        **dict(
+                            map(
+                                lambda a: (f"train/rec-loss{a}", loss_recs[a][-1]),
+                                range(A),
+                            )
+                        ),
+                    }
+                )
+
+                # validation
+            self.model.eval()
+            with th.no_grad():
+                val_loss = 0.0
+                val_loss_rec = 0.0
+                if B_val > 1:
+                    for batch_indx, (x, n) in enumerate(
+                        train_loader
+                    ):  # batch index, (data, data index)
                         x = x.to(rank)
                         n = n.to(int)
 
@@ -622,14 +525,28 @@ class cpl_mixVAE:
                             c_bin = th.tensor(
                                 c_onehot[n, :], dtype=th.float, device=rank
                             )
-                            prior_c = th.tensor(c_p[n, :], dtype=th.float, device=rank)
+                            prior_c = th.tensor(
+                                c_p[n, :], dtype=th.float, device=rank
+                            )
                         else:
                             c_bin = 0.0
                             prior_c = 0.0
 
-                        x_recs, p_x, r_x, _, cs, _, c_smps, s_means, s_logvars, _ = (
-                            self.model(x=xs, temp=self.temp, prior_c=prior_c, eval=True)
+                        (
+                            x_recs,
+                            p_x,
+                            r_x,
+                            _,
+                            cs,
+                            _,
+                            c_smps,
+                            s_means,
+                            s_logvars,
+                            _,
+                        ) = self.model(
+                            x=xs, temp=self.temp, prior_c=prior_c, eval=True
                         )
+
                         for a in range(A):
                             probs_noaug[a].append(to_np(cs[a]))
                             cs_train[a].append(
@@ -641,87 +558,67 @@ class cpl_mixVAE:
                                 .numpy()
                             )
 
-                labels = [
-                    np.ravel(classify(np.array(probs_noaug[a]))) for a in range(A)
-                ]
-                consensus = []
-                for a in range(A):
-                    for b in range(a + 1, A):
-                        consensus.append(
-                            confmat_mean(
-                                confmat_normalize(
-                                    compute_confmat(labels[a], labels[b], C)
-                                )
+                else:
+                    batch_indx = 0
+                    x, n = train_loader.dataset.tensors
+                    x = x.to(rank)
+                    n = n.to(int)
+
+                    xs = [x for _ in range(A)]
+
+                    if self.ref_prior:
+                        c_bin = th.tensor(
+                            c_onehot[n, :], dtype=th.float, device=rank
+                        )
+                        prior_c = th.tensor(c_p[n, :], dtype=th.float, device=rank)
+                    else:
+                        c_bin = 0.0
+                        prior_c = 0.0
+
+                    x_recs, p_x, r_x, _, cs, _, c_smps, s_means, s_logvars, _ = (
+                        self.model(x=xs, temp=self.temp, prior_c=prior_c, eval=True)
+                    )
+                    for a in range(A):
+                        probs_noaug[a].append(to_np(cs[a]))
+                        cs_train[a].append(
+                            cs[a]
+                            .cpu()
+                            .view(cs[a].size()[0], C)
+                            .argmax(dim=1)
+                            .detach()
+                            .numpy()
+                        )
+
+            labels = [
+                np.ravel(classify(np.array(probs_noaug[a]))) for a in range(A)
+            ]
+            consensus = []
+            for a in range(A):
+                for b in range(a + 1, A):
+                    consensus.append(
+                        confmat_mean(
+                            confmat_normalize(
+                                compute_confmat(labels[a], labels[b], C)
                             )
                         )
-                consensus_train.append(np.mean(np.array(consensus)))
-                if run:
-                    run.log(
-                        {
-                            "train/consensus": consensus_train[-1],
-                        }
                     )
+            consensus_train.append(np.mean(np.array(consensus)))
+            if run:
+                run.log(
+                    {
+                        "train/consensus": consensus_train[-1],
+                    }
+                )
 
-                # validation
-                self.model.eval()
-                with th.no_grad():
-                    val_loss = 0.0
-                    val_loss_rec = 0.0
-                    if B_val > 1:
-                        for batch_indx, (x, n) in enumerate(
-                            test_loader
-                        ):  # batch index, (data, data index)
-                            x = x.to(rank)
-                            n = n.to(int)
-
-                            xs = [x for _ in range(A)]
-
-                            if self.ref_prior:
-                                c_bin = th.tensor(
-                                    c_onehot[n, :], dtype=th.float, device=rank
-                                )
-                                prior_c = th.tensor(
-                                    c_p[n, :], dtype=th.float, device=rank
-                                )
-                            else:
-                                c_bin = 0.0
-                                prior_c = 0.0
-
-                            (
-                                x_recs,
-                                p_x,
-                                r_x,
-                                _,
-                                cs,
-                                _,
-                                c_smps,
-                                s_means,
-                                s_logvars,
-                                _,
-                            ) = self.model(
-                                x=xs, temp=self.temp, prior_c=prior_c, eval=True
-                            )
-                            loss, loss_rec, loss_joint, _, _, _, _, _, _ = (
-                                self.model.loss(
-                                    x_recs,
-                                    p_x,
-                                    r_x,
-                                    xs,
-                                    s_means,
-                                    s_logvars,
-                                    cs,
-                                    c_smps,
-                                    c_bin,
-                                )
-                            )
-                            val_loss += loss.data.item()
-                            for a in range(A):
-                                val_loss_rec += loss_rec[a].item() / D
-                                probs_test[a].append(to_np(cs[a]))
-
-                    else:
-                        batch_indx = 0
-                        x, n = test_loader.dataset.tensors
+            # validation
+            self.model.eval()
+            with th.no_grad():
+                val_loss = 0.0
+                val_loss_rec = 0.0
+                if B_val > 1:
+                    for batch_indx, (x, n) in enumerate(
+                        test_loader
+                    ):  # batch index, (data, data index)
                         x = x.to(rank)
                         n = n.to(int)
 
@@ -731,229 +628,178 @@ class cpl_mixVAE:
                             c_bin = th.tensor(
                                 c_onehot[n, :], dtype=th.float, device=rank
                             )
-                            prior_c = th.tensor(c_p[n, :], dtype=th.float, device=rank)
+                            prior_c = th.tensor(
+                                c_p[n, :], dtype=th.float, device=rank
+                            )
                         else:
                             c_bin = 0.0
                             prior_c = 0.0
 
-                        x_recs, p_x, r_x, _, cs, _, c_smps, s_means, s_logvars, _ = (
-                            self.model(x=xs, temp=self.temp, prior_c=prior_c, eval=True)
+                        (
+                            x_recs,
+                            p_x,
+                            r_x,
+                            _,
+                            cs,
+                            _,
+                            c_smps,
+                            s_means,
+                            s_logvars,
+                            _,
+                        ) = self.model(
+                            x=xs, temp=self.temp, prior_c=prior_c, eval=True
                         )
-                        loss, loss_rec, loss_joint, _, _, _, _, _, _ = self.model.loss(
-                            x_recs, p_x, r_x, xs, s_means, s_logvars, cs, c_smps, c_bin
+                        loss, loss_rec, loss_joint, _, _, _, _, _, _ = (
+                            self.model.loss(
+                                x_recs,
+                                p_x,
+                                r_x,
+                                xs,
+                                s_means,
+                                s_logvars,
+                                cs,
+                                c_smps,
+                                c_bin,
+                            )
                         )
-                        val_loss = loss.item()
+                        val_loss += loss.data.item()
                         for a in range(A):
                             val_loss_rec += loss_rec[a].item() / D
                             probs_test[a].append(to_np(cs[a]))
 
-                labels = [np.ravel(classify(np.array(probs_test[a]))) for a in range(A)]
-                consensus = []
-                for a in range(A):
-                    for b in range(a + 1, A):
-                        consensus.append(
-                            confmat_mean(
-                                confmat_normalize(
-                                    compute_confmat(labels[a], labels[b], C)
-                                )
+                else:
+                    batch_indx = 0
+                    x, n = test_loader.dataset.tensors
+                    x = x.to(rank)
+                    n = n.to(int)
+
+                    xs = [x for _ in range(A)]
+
+                    if self.ref_prior:
+                        c_bin = th.tensor(
+                            c_onehot[n, :], dtype=th.float, device=rank
+                        )
+                        prior_c = th.tensor(c_p[n, :], dtype=th.float, device=rank)
+                    else:
+                        c_bin = 0.0
+                        prior_c = 0.0
+
+                    x_recs, p_x, r_x, _, cs, _, c_smps, s_means, s_logvars, _ = (
+                        self.model(x=xs, temp=self.temp, prior_c=prior_c, eval=True)
+                    )
+                    loss, loss_rec, loss_joint, _, _, _, _, _, _ = self.model.loss(
+                        x_recs, p_x, r_x, xs, s_means, s_logvars, cs, c_smps, c_bin
+                    )
+                    val_loss = loss.item()
+                    for a in range(A):
+                        val_loss_rec += loss_rec[a].item() / D
+                        probs_test[a].append(to_np(cs[a]))
+
+            labels = [np.ravel(classify(np.array(probs_test[a]))) for a in range(A)]
+            consensus = []
+            for a in range(A):
+                for b in range(a + 1, A):
+                    consensus.append(
+                        confmat_mean(
+                            confmat_normalize(
+                                compute_confmat(labels[a], labels[b], C)
                             )
                         )
-                consensus_val.append(np.mean(np.array(consensus)))
+                    )
+            consensus_val.append(np.mean(np.array(consensus)))
 
-                validation_rec_loss[e] = val_loss_rec / Bs_val / A
-                validation_loss[e] = val_loss / Bs_val
-                print(
-                    f"val-loss {validation_loss[e]:.2f} | rec-loss {validation_rec_loss[e]:.2f} | val-cns {consensus_val[-1]:.2f}"
+            validation_rec_loss[e] = val_loss_rec / Bs_val / A
+            validation_loss[e] = val_loss / Bs_val
+            print(
+                f"val-loss {validation_loss[e]:.2f} | rec-loss {validation_rec_loss[e]:.2f} | val-cns {consensus_val[-1]:.2f}"
+            )
+            if run:
+                run.log(
+                    {
+                        "val/total-loss": validation_loss[e],
+                        "val/rec-loss": validation_rec_loss[e],
+                        "val/consensus": consensus_val[-1],
+                    }
                 )
-                if run:
-                    run.log(
-                        {
-                            "val/total-loss": validation_loss[e],
-                            "val/rec-loss": validation_rec_loss[e],
-                            "val/consensus": consensus_val[-1],
-                        }
-                    )
 
-                if self.save and (e > 0) and (e % 10 == 0):
-                    trained_model = (
-                        self.folder + f"/model/cpl_mixVAE_model_epoch_{e}.pth"
-                    )
-                    print(f"saving model to: {trained_model}")
-                    th.save(
-                        {
-                            "model_state_dict": self.model.state_dict(),
-                            "optimizer_state_dict": self.optimizer.state_dict(),
-                        },
-                        trained_model,
-                    )
-                    # breakpoint()
-                    predicted_label = np.zeros((A, len(cs_train[0][0] * B)))
-                    for a in range(A):
-                        predicted_label[a] = np.concatenate(cs_train[a])
-
-                    # confusion matrix code
-                    c_agreement = []
-                    for a in range(A):
-                        pred_a = predicted_label[a, :]
-                        for b in range(a + 1, A):
-                            pred_b = predicted_label[b, :]
-                            armA_vs_armB = np.zeros((C, C))
-
-                            for samp in range(pred_a.shape[0]):
-                                armA_vs_armB[
-                                    pred_a[samp].astype(int), pred_b[samp].astype(int)
-                                ] += 1
-
-                            num_samp_arm = []
-                            for ij in range(C):
-                                sum_row = armA_vs_armB[ij, :].sum()
-                                sum_column = armA_vs_armB[:, ij].sum()
-                                num_samp_arm.append(max(sum_row, sum_column))
-
-                            armA_vs_armB = np.divide(
-                                armA_vs_armB,
-                                np.array(num_samp_arm),
-                                out=np.zeros_like(armA_vs_armB),
-                                where=np.array(num_samp_arm) != 0,
-                            )
-                            c_agreement.append(np.diag(armA_vs_armB))
-                            ind_sort = np.argsort(c_agreement[-1])
-                            plt.figure()
-                            plt.imshow(
-                                armA_vs_armB[:, ind_sort[::-1]][ind_sort[::-1]],
-                                cmap="binary",
-                            )
-                            mtx = armA_vs_armB[:, ind_sort[::-1]][ind_sort[::-1]]
-                            mtx_diag = np.mean(np.diag(mtx))
-                            plt.colorbar()
-                            plt.xlabel("arm_" + str(a), fontsize=20)
-                            plt.xticks(range(C), range(C))
-                            plt.yticks(range(C), range(C))
-                            plt.ylabel("arm_" + str(b), fontsize=20)
-                            plt.xticks([])
-                            plt.yticks([])
-                            plt.title(
-                                f"Epoch {e} |c|={C} (avg = {consensus_train[-1]:.2f}, {mtx_diag:.2f})",
-                                fontsize=20,
-                            )
-                            plt.savefig(
-                                self.folder
-                                + "/consensus_arm_"
-                                + str(a)
-                                + "_arm_"
-                                + str(b)
-                                + "_epoch_"
-                                + str(e)
-                                + ".png",
-                                dpi=600,
-                            )
-                            plt.close("all")
-                if consensus_train[-1] >= good_enuf_consensus or e == E - 1:
-                    trained_model = (
-                        self.folder
-                        + f"/model/cns_cpl_mixVAE_model_before_pruning_A{A}_"
-                        + self.current_time
-                        + ".pth"
-                    )
-                    print(f"saving model to: {trained_model}")
-                    th.save(
-                        {
-                            "model_state_dict": self.model.state_dict(),
-                            "optimizer_state_dict": self.optimizer.state_dict(),
-                        },
-                        trained_model,
-                    )
-
-                    predicted_label = np.zeros((A, len(cs_train[0][0] * B)))
-                    for a in range(A):
-                        predicted_label[a] = np.concatenate(cs_train[a])
-
-                    # confusion matrix code
-                    c_agreement = []
-                    for a in range(A):
-                        pred_a = predicted_label[a, :]
-                        for b in range(a + 1, A):
-                            pred_b = predicted_label[b, :]
-                            armA_vs_armB = np.zeros((C, C))
-
-                            for samp in range(pred_a.shape[0]):
-                                armA_vs_armB[
-                                    pred_a[samp].astype(int), pred_b[samp].astype(int)
-                                ] += 1
-
-                            num_samp_arm = []
-                            for ij in range(C):
-                                sum_row = armA_vs_armB[ij, :].sum()
-                                sum_column = armA_vs_armB[:, ij].sum()
-                                num_samp_arm.append(max(sum_row, sum_column))
-
-                            armA_vs_armB = np.divide(
-                                armA_vs_armB,
-                                np.array(num_samp_arm),
-                                out=np.zeros_like(armA_vs_armB),
-                                where=np.array(num_samp_arm) != 0,
-                            )
-                            c_agreement.append(np.diag(armA_vs_armB))
-                            ind_sort = np.argsort(c_agreement[-1])
-                            plt.figure()
-                            plt.imshow(
-                                armA_vs_armB[:, ind_sort[::-1]][ind_sort[::-1]],
-                                cmap="binary",
-                            )
-                            plt.colorbar()
-                            plt.xlabel("arm_" + str(a), fontsize=20)
-                            plt.xticks(range(C), range(C))
-                            plt.yticks(range(C), range(C))
-                            plt.ylabel("arm_" + str(b), fontsize=20)
-                            plt.xticks([])
-                            plt.yticks([])
-                            plt.title(
-                                f"Epoch {e} |c|={C} (avg = {consensus_train[-1]:.2f})",
-                                fontsize=20,
-                            )
-                            plt.savefig(
-                                self.folder
-                                + "/consensus_arm_"
-                                + str(a)
-                                + "_arm_"
-                                + str(b)
-                                + "_epoch_"
-                                + str(e)
-                                + ".png",
-                                dpi=600,
-                            )
-                            plt.close("all")
-
-                    break
-
-                epoch_times.append(time.time() - t0)
-
-            def save_loss_plot(loss_data, label, filename):
-                fig, ax = plt.subplots()
-                ax.plot(range(n_epoch), loss_data, label=label)
-                ax.set_xlabel("# epoch", fontsize=16)
-                ax.set_ylabel("loss value", fontsize=16)
-                ax.set_title(
-                    f"{label} loss of the cpl-mixVAE for K={C} and S={self.state_dim}"
-                )
-                ax.spines["right"].set_visible(False)
-                ax.spines["top"].set_visible(False)
-                ax.legend()
-                ax.figure.savefig(
-                    self.folder + f"/model/{filename}_A{A}_{C}_{self.current_time}.png"
-                )
-                plt.close()
-
-            if self.save and n_epoch > 0:
-                # Save train loss plot
-                # save_loss_plot(losses, "Training", "train_loss_curve")
-
-                # Save validation loss plot
-                # save_loss_plot(validation_loss, "Validation", "validation_loss_curve")
-
+            if self.save and (e > 0) and (e % 10 == 0):
                 trained_model = (
-                    self.folder
-                    + f"/model/cpl_mixVAE_model_before_pruning_A{A}_"
+                    dirname + f"/model/cpl_mixVAE_model_epoch_{e}.pth"
+                )
+                print(f"saving model to: {trained_model}")
+                th.save(
+                    {
+                        "model_state_dict": self.model.state_dict(),
+                        "optimizer_state_dict": self.optimizer.state_dict(),
+                    },
+                    trained_model,
+                )
+                # breakpoint()
+                predicted_label = np.zeros((A, len(cs_train[0][0] * B)))
+                for a in range(A):
+                    predicted_label[a] = np.concatenate(cs_train[a])
+
+                # confusion matrix code
+                c_agreement = []
+                for a in range(A):
+                    pred_a = predicted_label[a, :]
+                    for b in range(a + 1, A):
+                        pred_b = predicted_label[b, :]
+                        armA_vs_armB = np.zeros((C, C))
+
+                        for samp in range(pred_a.shape[0]):
+                            armA_vs_armB[
+                                pred_a[samp].astype(int), pred_b[samp].astype(int)
+                            ] += 1
+
+                        num_samp_arm = []
+                        for ij in range(C):
+                            sum_row = armA_vs_armB[ij, :].sum()
+                            sum_column = armA_vs_armB[:, ij].sum()
+                            num_samp_arm.append(max(sum_row, sum_column))
+
+                        armA_vs_armB = np.divide(
+                            armA_vs_armB,
+                            np.array(num_samp_arm),
+                            out=np.zeros_like(armA_vs_armB),
+                            where=np.array(num_samp_arm) != 0,
+                        )
+                        c_agreement.append(np.diag(armA_vs_armB))
+                        ind_sort = np.argsort(c_agreement[-1])
+                        plt.figure()
+                        plt.imshow(
+                            armA_vs_armB[:, ind_sort[::-1]][ind_sort[::-1]],
+                            cmap="binary",
+                        )
+                        mtx = armA_vs_armB[:, ind_sort[::-1]][ind_sort[::-1]]
+                        mtx_diag = np.mean(np.diag(mtx))
+                        plt.colorbar()
+                        plt.xlabel("arm_" + str(a), fontsize=20)
+                        plt.xticks(range(C), range(C))
+                        plt.yticks(range(C), range(C))
+                        plt.ylabel("arm_" + str(b), fontsize=20)
+                        plt.xticks([])
+                        plt.yticks([])
+                        plt.title(
+                            f"Epoch {e} |c|={C} (avg = {consensus_train[-1]:.2f}, {mtx_diag:.2f})",
+                            fontsize=20,
+                        )
+                        plt.savefig(
+                            dirname
+                            + "/consensus_arm_"
+                            + str(a)
+                            + "_arm_"
+                            + str(b)
+                            + "_epoch_"
+                            + str(e)
+                            + ".png",
+                            dpi=600,
+                        )
+                        plt.close("all")
+            if consensus_train[-1] >= good_enough or e == E - 1:
+                trained_model = (
+                    dirname
+                    + f"/model/cns_cpl_mixVAE_model_before_pruning_A{A}_"
                     + self.current_time
                     + ".pth"
                 )
@@ -965,33 +811,135 @@ class cpl_mixVAE:
                     },
                     trained_model,
                 )
-                # bias = self.model.fcc[0].bias.detach().cpu().numpy()
-                # mask = range(len(bias))
-                # prune_indx = []
-                # # plot the learning curve of the network
-                # fig, ax = plt.subplots()
-                # ax.plot(range(E), losses, label="Training")
-                # ax.plot(range(E), validation_loss, label="Validation")
-                # ax.set_xlabel("# epoch", fontsize=16)
-                # ax.set_ylabel("loss value", fontsize=16)
-                # ax.set_title(
-                #     "Learning curve of the cpl-mixVAE for K="
-                #     + str(C)
-                #     + " and S="
-                #     + str(S)
-                # )
-                # ax.spines["right"].set_visible(False)
-                # ax.spines["top"].set_visible(False)
-                # ax.legend()
-                # ax.figure.savefig(
-                #     self.folder
-                #     + f"/model/learning_curve_before_pruning_K_A{A}_"
-                #     + str(C)
-                #     + "_"
-                #     + self.current_time
-                #     + ".png"
-                # )
-                # plt.close("all")
+
+                predicted_label = np.zeros((A, len(cs_train[0][0] * B)))
+                for a in range(A):
+                    predicted_label[a] = np.concatenate(cs_train[a])
+
+                # confusion matrix code
+                c_agreement = []
+                for a in range(A):
+                    pred_a = predicted_label[a, :]
+                    for b in range(a + 1, A):
+                        pred_b = predicted_label[b, :]
+                        armA_vs_armB = np.zeros((C, C))
+
+                        for samp in range(pred_a.shape[0]):
+                            armA_vs_armB[
+                                pred_a[samp].astype(int), pred_b[samp].astype(int)
+                            ] += 1
+
+                        num_samp_arm = []
+                        for ij in range(C):
+                            sum_row = armA_vs_armB[ij, :].sum()
+                            sum_column = armA_vs_armB[:, ij].sum()
+                            num_samp_arm.append(max(sum_row, sum_column))
+
+                        armA_vs_armB = np.divide(
+                            armA_vs_armB,
+                            np.array(num_samp_arm),
+                            out=np.zeros_like(armA_vs_armB),
+                            where=np.array(num_samp_arm) != 0,
+                        )
+                        c_agreement.append(np.diag(armA_vs_armB))
+                        ind_sort = np.argsort(c_agreement[-1])
+                        plt.figure()
+                        plt.imshow(
+                            armA_vs_armB[:, ind_sort[::-1]][ind_sort[::-1]],
+                            cmap="binary",
+                        )
+                        plt.colorbar()
+                        plt.xlabel("arm_" + str(a), fontsize=20)
+                        plt.xticks(range(C), range(C))
+                        plt.yticks(range(C), range(C))
+                        plt.ylabel("arm_" + str(b), fontsize=20)
+                        plt.xticks([])
+                        plt.yticks([])
+                        plt.title(
+                            f"Epoch {e} |c|={C} (avg = {consensus_train[-1]:.2f})",
+                            fontsize=20,
+                        )
+                        plt.savefig(
+                            dirname
+                            + "/consensus_arm_"
+                            + str(a)
+                            + "_arm_"
+                            + str(b)
+                            + "_epoch_"
+                            + str(e)
+                            + ".png",
+                            dpi=600,
+                        )
+                        plt.close("all")
+
+                break
+
+            epoch_times.append(time.time() - t0)
+
+        def save_loss_plot(loss_data, label, filename):
+            fig, ax = plt.subplots()
+            ax.plot(range(n_epoch), loss_data, label=label)
+            ax.set_xlabel("# epoch", fontsize=16)
+            ax.set_ylabel("loss value", fontsize=16)
+            ax.set_title(
+                f"{label} loss of the cpl-mixVAE for K={C} and S={self.state_dim}"
+            )
+            ax.spines["right"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax.legend()
+            ax.figure.savefig(
+                dirname + f"/model/{filename}_A{A}_{C}_{self.current_time}.png"
+            )
+            plt.close()
+
+        if self.save and n_epoch > 0:
+            # Save train loss plot
+            # save_loss_plot(losses, "Training", "train_loss_curve")
+
+            # Save validation loss plot
+            # save_loss_plot(validation_loss, "Validation", "validation_loss_curve")
+
+            trained_model = (
+                dirname
+                + f"/model/cpl_mixVAE_model_before_pruning_A{A}_"
+                + self.current_time
+                + ".pth"
+            )
+            print(f"saving model to: {trained_model}")
+            th.save(
+                {
+                    "model_state_dict": self.model.state_dict(),
+                    "optimizer_state_dict": self.optimizer.state_dict(),
+                },
+                trained_model,
+            )
+            # bias = self.model.fcc[0].bias.detach().cpu().numpy()
+            # mask = range(len(bias))
+            # prune_indx = []
+            # # plot the learning curve of the network
+            # fig, ax = plt.subplots()
+            # ax.plot(range(E), losses, label="Training")
+            # ax.plot(range(E), validation_loss, label="Validation")
+            # ax.set_xlabel("# epoch", fontsize=16)
+            # ax.set_ylabel("loss value", fontsize=16)
+            # ax.set_title(
+            #     "Learning curve of the cpl-mixVAE for K="
+            #     + str(C)
+            #     + " and S="
+            #     + str(S)
+            # )
+            # ax.spines["right"].set_visible(False)
+            # ax.spines["top"].set_visible(False)
+            # ax.legend()
+            # ax.figure.savefig(
+            #     self.folder
+            #     + f"/model/learning_curve_before_pruning_K_A{A}_"
+            #     + str(C)
+            #     + "_"
+            #     + self.current_time
+            #     + ".png"
+            # )
+            # plt.close("all")
 
         if n_epoch_p > 0:
             # initialized pruning parameters of the layer of the discrete variable
@@ -1092,7 +1040,7 @@ class cpl_mixVAE:
                     plt.yticks([])
                     plt.title("|c|=" + str(C), fontsize=20)
                     plt.savefig(
-                        self.folder
+                        dirname
                         + "/consensus_"
                         + str(pr)
                         + "_arm_"
@@ -1190,7 +1138,7 @@ class cpl_mixVAE:
                         w_param, bias_param, activ_param = 0, 0, 0
                         # parallelize
                         for arm in range(A - 1):
-                            if self.aug_file:
+                            if self.netA:
                                 noise = torch.randn(
                                     batch_size, self.aug_param["num_n"]
                                 ).to(self.device)
@@ -1401,7 +1349,7 @@ class cpl_mixVAE:
                     prune.remove(self.model.fc6[a], "weight")
 
                 trained_model = (
-                    self.folder
+                    dirname
                     + "/model/cpl_mixVAE_model_after_pruning_"
                     + str(pr + 1)
                     + "_"
@@ -1431,8 +1379,8 @@ class cpl_mixVAE:
                 ax.spines["top"].set_visible(False)
                 ax.legend()
                 ax.figure.savefig(
-                    self.folder
-                    + "../model/learning_curve_after_pruning_"
+                    dirname
+                    + "/model/learning_curve_after_pruning_"
                     + str(pr + 1)
                     + "_K_"
                     + str(self.n_categories)
@@ -1467,7 +1415,7 @@ class cpl_mixVAE:
         D = self.input_dim
         D_low = self.lowD_dim
         S = self.state_dim
-        B = unwrap(dl.batch_size)
+        B = dl.batch_size
 
         # Set the model to evaluation mode
         self.model.eval()

@@ -5,6 +5,8 @@ import signal
 from copy import deepcopy
 from itertools import starmap
 from pathlib import Path
+from typing import Mapping, Any
+import toml
 
 import numpy as np
 import torch as th
@@ -23,59 +25,77 @@ from mmidas.cpl_mixvae import cpl_mixVAE
 from mmidas.nn_model import mixVAE_model
 from mmidas.utils.dataloader import get_loaders, load_data
 from mmidas.utils.tools import get_paths
+from mmidas.augmentation.udagan import Augmenter_smartseq
 
 SEED = 546
+DATASET = "mouse_smartseq"
 
-def get_files(pred=None):
-    return [f for f in os.listdir() if not pred or pred(f)]
 
-def count_files(pred):
-    return len(get_files(pred))
+def get_files(dir=None, pred=None):
+    return [f for f in os.listdir(dir) if not pred or pred(f)]
 
-def prefix_count(prefix):
-    return count_files(lambda f: f.startswith(prefix))
+def count_files(dir=None, pred=None):
+    return len(get_files(dir, pred))
 
-def parse_toml(toml_file: str, sub_file: str, args=None, trained=False):
-    def count_existing(saving_folder, acc=0):
-        if not os.path.exists(saving_folder + f"_RUN{acc}"):
-            return acc
-        else:
-            return count_existing(saving_folder, acc + 1)
+def prefix_count(dir=None, prefix=''):
+    return count_files(dir, lambda f: f.startswith(prefix))
 
-    def mk_saving_folder(saving_folder, run):
-        return saving_folder + f"_RUN{run}"
+def treemap(fn, tree):
+    if isinstance(tree, dict):
+        return {k: treemap(fn, v) for k, v in tree.items()}
+    else:
+        return fn(tree)
 
-    config = get_paths(toml_file=toml_file, sub_file=sub_file)
-    data_file = Path(config[sub_file]["data_path"]) / Path(
-        config[sub_file]["anndata_file"]
-    )
-    folder_name = (
-        f"K{args.n_categories}_S{args.state_dim}_AUG{args.augmentation}_LR{args.lr}_A{args.n_arm}_B{args.batch_size}"
-        + f"_E{args.n_epoch}_Ep{args.n_epoch_p}"
-    )
+def load_config(file: str) -> Mapping[str, Any]:
+    with open(file, 'r') as f:
+        config = toml.load(f)
+    config["paths"]["main_dir"] = os.getcwd()
+
+    config["paths"] = treemap(Path, config["paths"])
+    config["mouse_smartseq"] = treemap(Path, config["mouse_smartseq"])
+    config["mouse_ctx_10x"] = treemap(Path, config["mouse_ctx_10x"])
+    config["SEA-AD"] = treemap(Path, config["SEA-AD"])
+
+    return config
+
+def load_mmidas(file=None):
+    ...
+
+# TODO
+def load_augmenter(file=None):
+    if DATASET != "mouse_smartseq":
+        raise NotImplementedError("currently only mouse_smartseq is supported")
+
+    print("warning: currently only mouse_smartseq is supported")
+
+    if file is None:
+        file = f"pretrained/augmenter_{DATASET}"
+
+    model = th.load(file, map_location="cpu")
+    params = model["parameters"]
+    return Augmenter_smartseq(input_dim=params["n_features"], 
+                              latent_dim=params["num_z"], 
+                              noise_dim=params["num_n"])
+
+def make_files(file: str, dataset: str, dirname, trained: bool=False):
+    config = load_config(file)
     saving_folder = str(
-        config["paths"]["main_dir"] / config[sub_file]["saving_path"] / folder_name
+        config["paths"]["main_dir"] / config[dataset]["saving_path"] / dirname
     )
 
-    # assert count_existing(saving_folder, 0) == prefix_count(saving_folder + "_RUN")
-    print("count_existing(saving_folder, 0):", count_existing(saving_folder, 0))
-    print("prefix_count(saving_folder + '_RUN'):", prefix_count(saving_folder + "_RUN"))
-    return dict(
-        mapv(
-            str,
-            {
-                "data": data_file,
-                "saving": mk_saving_folder(
-                    saving_folder, count_existing(saving_folder)
-                ),
-                "aug": config["paths"]["main_dir"] / config[sub_file]["aug_model"],
-                "trained": config["paths"]["main_dir"]
-                / config[sub_file]["trained_model"]
-                if trained
-                else "",
-            }.items(),
-        )
-    )
+    data_file = config[dataset]["data_path"] / config[dataset]["anndata_file"]
+    saving_file = saving_folder + f"_RUN{prefix_count('mmidas-results', dirname + '_RUN')}"
+    aug_file = config["paths"]["main_dir"] / config[dataset]["aug_model"]
+    trained_file = config["paths"]["main_dir"] / config[dataset]["trained_model"] if trained else ""
+
+    files = {
+        "data": data_file,
+        "saving": saving_file,
+        "aug": aug_file,
+        "trained": trained_file,
+    }
+    files = {k: str(v) for k, v in files.items()}
+    return files
 
 
 def main(rank, ws, args):
@@ -83,18 +103,28 @@ def main(rank, ws, args):
         init_dist_env(rank, ws, args.addr, args.port)
 
     # Load configuration paths
-    files = parse_toml("mmidas.toml", "mouse_smartseq", args, trained=False)
-    print(f" -- making folders: {files['saving']} -- ")
-    os.makedirs(files["saving"], exist_ok=True)
-    os.makedirs(files["saving"] + "/model", exist_ok=True)
+
+    # dirname = f"K{args.n_categories}_S{args.state_dim}_AUG{args.augmentation}_LR{args.lr}_A{args.n_arm}_B{args.batch_size}_E{args.n_epoch}_Ep{args.n_epoch_p}"
+    # files = make_files("config.toml", "mouse_smartseq", dirname, trained=False)
+    # print(f" -- making folders: {files['saving']} -- ")
+    # os.makedirs(files["saving"], exist_ok=True)
+    # os.makedirs(files["saving"] + "/model", exist_ok=True)
+
+    config = load_config("config.toml")
 
     # Load data
-    data = load_data(datafile=files["data"])
+    data = load_data("data" / config[DATASET]["anndata_file"])
+
     (N, D) = data["log1p"].shape
     print(f"# cells: {N}, # genes: {D}")
 
     # Initialize the coupled mixVAE (MMIDAS) model
-    cplMixVAE = cpl_mixVAE(files["saving"], files["aug"], rank)
+    # cplMixVAE = cpl_mixVAE(files["saving"], files["aug"], rank)
+    if args.augmentation:
+        aug = load_augmenter()
+    else:
+        aug = None
+    cplMixVAE = cpl_mixVAE(device=rank, augmenter=aug)
 
     # Make data loaders for training, validation, and testing
     fold = 0  # fold index for cross-validation, for reproducibility purpose
@@ -108,6 +138,11 @@ def main(rank, ws, args):
     )
 
     # Initialize the model with specified parameters
+    if args.use_orig_params:
+        print("warning: support for loading original parameters is not yet implemented")
+    else:
+        pretrained_model = None
+
     cplMixVAE.init_model(
         n_categories=args.n_categories,
         state_dim=args.state_dim,
@@ -126,7 +161,7 @@ def main(rank, ws, args):
         beta=args.beta,
         ref_prior=args.ref_pc,
         variational=args.variational,
-        trained_model=files["trained"],
+        trained_model=pretrained_model,
         n_pr=args.n_pr,
         mode=args.loss_mode,
     )

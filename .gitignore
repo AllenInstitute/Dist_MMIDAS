@@ -25,3 +25,16 @@ mmidas-logs/
 evaluation/
 *.bak
 *.pyc
+mmidas/augmentation/__pycache__/aug_utils.cpython-312.pyc
+mmidas/augmentation/__pycache__/aug_utils.cpython-312.pyc
+mmidas/augmentation/__pycache__/udagan.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/tools.cpython-312.pyc
+mmidas/utils/__pycache__/dataloader.cpython-312.pyc
+
+pretrained/*

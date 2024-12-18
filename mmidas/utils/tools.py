@@ -4,19 +4,15 @@ import requests
 from pathlib import Path, PosixPath
 from functools import lru_cache
 from typing import Any
+from pprint import pprint
+from copy import deepcopy
 
 import numpy as np
 import scipy.io as sio
 from sklearn.preprocessing import normalize
 
 
-# TODO
-def parse_toml():
-    pass
-
-
-@lru_cache(maxsize=None)
-def get_paths(toml_file: str, sub_file: str = "files", verbose=False) -> dict[str, Any]:
+def get_paths(config_filename: str, dataset: str = "files", verbose=False) -> dict[str, Any]:
     """Loads dictionary with path names and any other variables set through xxx.toml
 
     Args:
@@ -25,35 +21,23 @@ def get_paths(toml_file: str, sub_file: str = "files", verbose=False) -> dict[st
     Returns:
         config: dict
     """
+    cwd = Path(os.getcwd())
 
-    # package_dir = Path().resolve().parents[1]
-    package_dir = PosixPath(os.getcwd())
-    config_file = package_dir / toml_file
-    print(config_file)
+    with open(cwd / config_filename, "r") as f:
+        config = toml.load(f)
 
-    if not Path(config_file).is_file():
-        print(f"Did not find project`s toml file: {config_file}")
+    config["paths"]["main_dir"] = cwd
 
-    f = open(config_file, "r")
-    config = toml.load(f)
-    f.close()
-
-    config["paths"].update({"main_dir": package_dir})
+    for k in {"paths", dataset}:
+        if k == dataset:
+            print(f"loading {dataset} paths")
+        for l in config[k]:
+            if Path(config[k][l]).exists():
+                config[k][l] = Path(config[k][l])
 
     if verbose:
-        for key in config.keys():
-            print(f"{key}: {config[key]}")
-
-    for key in config:
-        if key == "paths":
-            for key2 in config["paths"]:
-                if Path(config["paths"][key2]).exists():
-                    config["paths"][key2] = Path(config["paths"][key2])
-        if key == sub_file:
-            print(f"Getting files directories belong to {sub_file}...")
-            for key2 in config[sub_file]:
-                if Path(config[sub_file][key2]).exists():
-                    config[sub_file][key2] = Path(config[sub_file][key2])
+        print("config:")
+        pprint(config)
 
     return config
 
