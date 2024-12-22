@@ -19,6 +19,7 @@ dependencies = [
     "tqdm==4.64.1",
     "torch>=2.5.1",
     "torchvision>=0.20.1",
+    "hypothesis>=6.122.6",
 ]
 
 [build-system]

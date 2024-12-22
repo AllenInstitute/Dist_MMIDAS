@@ -19,8 +19,22 @@ from mmidas._evals import evals2
 from mmidas.utils.dataloader import get_loaders, load_data
 from mmidas.utils.tools import get_paths
 
-# class Converter:
+class Converter:
+    def __init__(self):
+        self.converters = defaultdict(dict)
 
+    def register(self, from_, to_, fn):
+        self.converters[from_.lower()][to_.lower()] = fn
+
+    def convert(self, x, from_, to_):
+        return self.converters[from_.lower()][to_.lower()](x)
+    
+
+converter = Converter()
+converter.register('B', 'MB', lambda x: x / 1e6)
+
+def convert(x, from_, to_):
+    return converter.convert(x, from_, to_)
 
 
 def compose(*fs):
@@ -28,13 +42,6 @@ def compose(*fs):
         return lambda *a, **kw: f(g(*a, **kw))
 
     return reduce(compose2, fs)
-
-def convert(x, from_, to_):
-    if (from_, to_) == ('B', 'MB'):
-        return to_mb(x)
-
-def to_mb(bytes):
-    return bytes / 1e6
 
 def mapsnd(f, assocs):
     return starmap(lambda k, v: (k, f(v)), assocs)

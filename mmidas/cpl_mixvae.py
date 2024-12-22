@@ -31,7 +31,7 @@ from tqdm import tqdm, trange
 
 import wandb
 from mmidas._utils import (classify, confmat_mean, confmat_normalize,
-                           score_consensus, to_mb, to_np)
+                           score_consensus, convert, to_np)
 
 from .augmentation.udagan import *
 from .nn_model import VAEConfig, mixVAE_model
@@ -398,7 +398,7 @@ class cpl_mixVAE:
                 ) = self.model.loss(
                     x_recs, [], [], xs, s_means, s_logvars, cs, c_smps, c_bin
                 )
-                mem: float = to_mb(th.cuda.memory_allocated())
+                mem = convert(th.cuda.memory_allocated(), 'B', 'MB')
                 _loss.backward()
                 self.optimizer.step()
 
