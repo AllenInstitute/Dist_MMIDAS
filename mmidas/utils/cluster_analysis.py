@@ -1,14 +1,14 @@
+import matplotlib.gridspec as gs
+import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gs
-from sklearn.metrics import silhouette_samples, silhouette_score
 from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import (LinearDiscriminantAnalysis,
+                                           QuadraticDiscriminantAnalysis)
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (accuracy_score, silhouette_samples,
+                             silhouette_score)
 from sklearn.model_selection import KFold
-from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis, LinearDiscriminantAnalysis
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
 
 
 def RF_classifier(data, labels, kfold, seed):

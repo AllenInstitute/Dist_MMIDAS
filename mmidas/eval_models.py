@@ -1,8 +1,10 @@
-import numpy as np
 import pickle
+
 import matplotlib.pyplot as plt
-from .cpl_mixvae import cpl_mixVAE
+import numpy as np
 from torch.utils.data import DataLoader
+
+from .cpl_mixvae import cpl_mixVAE
 
 
 def summarize_inference(cpl: cpl_mixVAE, files, dl: DataLoader, saving_folder=""):

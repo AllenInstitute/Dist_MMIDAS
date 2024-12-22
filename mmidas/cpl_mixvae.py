@@ -2,47 +2,39 @@ import os
 import pickle
 import random
 import time
+from dataclasses import dataclass
 from functools import reduce
 from itertools import cycle, repeat
-from dataclasses import dataclass
-from typing import Optional, Literal, assert_never, Sequence, Iterable, Any, Mapping
+from typing import (Any, Iterable, Literal, Mapping, Optional, Sequence,
+                    assert_never)
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch as th
 import torch.distributed as dist
-from torch.distributed import ReduceOp
 import torch.multiprocessing as mp
-from torch import nn, cuda
 import torch.nn.functional as F
 import torch.nn.utils.prune as prune
 import torch.optim as optim
-from torch.optim.optimizer import Optimizer
 from sklearn.metrics.cluster import adjusted_rand_score
 from sklearn.model_selection import train_test_split
+from torch import cuda, nn
 from torch.autograd import Variable
+from torch.distributed import ReduceOp
 from torch.optim.lr_scheduler import StepLR
+from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import datasets, transforms
 from tqdm import tqdm, trange
+
 import wandb
+from mmidas._utils import (classify, confmat_mean, confmat_normalize,
+                           score_consensus, to_mb, to_np)
 
 from .augmentation.udagan import *
-from .nn_model import mixVAE_model, VAEConfig
-
-from mmidas._utils import (
-    to_np,
-    classify,
-    compute_confmat,
-    confmat_mean,
-    confmat_normalize,
-)
-
-
-def to_mb(bytes):
-    return bytes / 1e6
+from .nn_model import VAEConfig, mixVAE_model
 
 
 def is_master(rank):
@@ -450,7 +442,7 @@ class cpl_mixVAE:
             #         consensus.append(
             #             confmat_mean(
             #                 confmat_normalize(
-            #                     compute_confmat(labels[a], labels[b], C)
+            #                     score_consensus(labels[a], labels[b], C)
             #                 )
             #             )
             #         )
@@ -466,7 +458,7 @@ class cpl_mixVAE:
                     consensus.append(
                         confmat_mean(
                             confmat_normalize(
-                                compute_confmat(labels_aug[a], labels_aug[b], C)
+                                score_consensus(labels_aug[a], labels_aug[b], C)
                             )
                         )
                     )
@@ -598,7 +590,7 @@ class cpl_mixVAE:
                     consensus.append(
                         confmat_mean(
                             confmat_normalize(
-                                compute_confmat(labels[a], labels[b], C)
+                                score_consensus(labels[a], labels[b], C)
                             )
                         )
                     )
@@ -702,7 +694,7 @@ class cpl_mixVAE:
                     consensus.append(
                         confmat_mean(
                             confmat_normalize(
-                                compute_confmat(labels[a], labels[b], C)
+                                score_consensus(labels[a], labels[b], C)
                             )
                         )
                     )
@@ -1539,7 +1531,7 @@ class cpl_mixVAE:
                 for b in range(a + 1, A):
                     consensus.append(
                         confmat_mean(
-                            confmat_normalize(compute_confmat(labels[a], labels[b], C))
+                            confmat_normalize(score_consensus(labels[a], labels[b], C))
                         )
                     )
             consensus_val = np.mean(np.array(consensus))

@@ -1,14 +1,14 @@
 import fnmatch
 import os
 import pprint
+from copy import deepcopy
 
 import feather
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.io as sio
-import matplotlib.pyplot as plt
 import seaborn as sns
-from copy import deepcopy
 
 
 class Node():
@@ -425,6 +425,7 @@ def predict_leaf_gmm(train_z, true_train_lbl, test_z, true_test_lbl=[],
     2. then choosing the maximum among the combined labels \n
     3. `unique_dataset_lbl` is a list of labels that remain after merging'''
     import pdb
+
     import numpy as np
     from scipy.stats import multivariate_normal as mvn
 

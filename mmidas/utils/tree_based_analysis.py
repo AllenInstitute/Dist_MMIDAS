@@ -1,5 +1,6 @@
-import scipy.stats as stats
 import numpy as np
+import scipy.stats as stats
+
 from mmidas.utils.analysis_cells_tree import HTree, do_merges
 
 resolution = 600

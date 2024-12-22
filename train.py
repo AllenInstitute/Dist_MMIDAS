@@ -20,7 +20,7 @@ import wandb
 
 import fsdp_mnist as utils
 from mmidas._dist_utils import set_print, init_dist_env
-from mmidas._utils import mapv
+from mmidas._utils import mapsnd
 from mmidas.cpl_mixvae import cpl_mixVAE
 from mmidas.nn_model import mixVAE_model
 from mmidas.utils.dataloader import get_loaders, load_data

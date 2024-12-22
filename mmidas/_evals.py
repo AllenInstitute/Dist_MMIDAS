@@ -5,9 +5,11 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+
 def evals2(fa: nn.Module, fb: nn.Module, dl: DataLoader, eps=1e-9) -> Mapping[str, Any]:
+    from mmidas._utils import (confmat_mean, confmat_normalize, reassign,
+                               score_consensus)
     from mmidas.model import generate
-    from mmidas._utils import confmat_mean, confmat_normalize, compute_confmat, reassign
 
     C = fa.n_categories
     K = C
@@ -74,7 +76,7 @@ def evals2(fa: nn.Module, fb: nn.Module, dl: DataLoader, eps=1e-9) -> Mapping[st
                 _pm, smp_cts, out=np.zeros_like(_pm), where=smp_cts != 0
             )
             # _consensus = __consensus[:, inds_unpruned][inds_unpruned]
-            _consensus = confmat_normalize(compute_confmat(labels_a, labels_b, K))
+            _consensus = confmat_normalize(score_consensus(labels_a, labels_b, K))
             _dist_l2 = np.divide(
                 _emp_l2, smp_cts, out=np.zeros_like(_emp_l2), where=smp_cts != 0
             )[:, inds_unpruned][inds_unpruned]
@@ -122,7 +124,7 @@ def evals2(fa: nn.Module, fb: nn.Module, dl: DataLoader, eps=1e-9) -> Mapping[st
             # _consensus = np.divide(
             #     _pm, smp_cts, out=np.zeros_like(_pm), where=smp_cts != 0
             # )[:, inds_unpruned][inds_unpruned]
-            _consensus = confmat_normalize(compute_confmat(labels_a, labels_b, K))
+            _consensus = confmat_normalize(score_consensus(labels_a, labels_b, K))
             _dist_l2 = np.divide(
                 _emp_l2, smp_cts, out=np.zeros_like(_emp_l2), where=smp_cts != 0
             )[:, inds_unpruned][inds_unpruned]
@@ -170,7 +172,7 @@ def evals2(fa: nn.Module, fb: nn.Module, dl: DataLoader, eps=1e-9) -> Mapping[st
             # _consensus = np.divide(
             #     _pm, smp_cts, out=np.zeros_like(_pm), where=smp_cts != 0
             # )[:, inds_unpruned][inds_unpruned]
-            _consensus = confmat_normalize(compute_confmat(labels_a, labels_b, K))
+            _consensus = confmat_normalize(score_consensus(labels_a, labels_b, K))
             _dist_l2 = np.divide(
                 _emp_l2, smp_cts, out=np.zeros_like(_emp_l2), where=smp_cts != 0
             )[:, inds_unpruned][inds_unpruned]
@@ -196,7 +198,7 @@ def evals2(fa: nn.Module, fb: nn.Module, dl: DataLoader, eps=1e-9) -> Mapping[st
         for b in range(a + 1, A):
             labels_a = preds_a[a].astype(int) - 1
             labels_b = preds_a[b].astype(int) - 1
-            consensus_vec.append(confmat_mean(confmat_normalize(compute_confmat(labels_a, labels_b, K))))
+            consensus_vec.append(confmat_mean(confmat_normalize(score_consensus(labels_a, labels_b, K))))
     print("consensus_mean_a:", consensus_mean_a)
 
     return {

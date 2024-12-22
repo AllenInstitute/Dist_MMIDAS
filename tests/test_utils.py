@@ -4,10 +4,10 @@ import numpy as np
 
 from mmidas._utils import (
     compose,
-    compute_confmat,
+    score_consensus,
     confmat_normalize,
     confmat_mean,
-    compute_confmat_naive,
+    score_consensus_naive,
     confmat_normalize_naive,
     ecdf,
     classify,
@@ -17,7 +17,7 @@ from mmidas._utils import (
 
 def test_confusion_matrix():
     assert_expected_inline(
-        str(compute_confmat(np.array([1, 0, 2, 3]), np.array([1, 0, 2, 3]))),
+        str(score_consensus(np.array([1, 0, 2, 3]), np.array([1, 0, 2, 3]))),
         """\
 [[1. 0. 0. 0.]
  [0. 1. 0. 0.]
@@ -26,7 +26,7 @@ def test_confusion_matrix():
     )
     assert_expected_inline(
         str(
-            compute_confmat(np.array([1, 0, 2, 3, 0, 3]), np.array([1, 0, 2, 3, 1, 3]))
+            score_consensus(np.array([1, 0, 2, 3, 0, 3]), np.array([1, 0, 2, 3, 1, 3]))
         ),
         """\
 [[1. 1. 0. 0.]
@@ -64,7 +64,7 @@ def test_confmat_normalize():
     assert_expected_inline(
         str(
             confmat_normalize(
-                compute_confmat(
+                score_consensus(
                     np.array([1, 0, 2, 3, 0, 3]), np.array([1, 0, 2, 3, 1, 3])
                 )
             )
@@ -89,7 +89,7 @@ def test_confmat_mean():
     assert_expected_inline(
         str(
             confmat_mean(
-                compute_confmat(
+                score_consensus(
                     np.array([1, 0, 2, 3, 0, 3]), np.array([1, 0, 2, 3, 1, 3])
                 )
             )
@@ -110,8 +110,8 @@ def test_confmat_vectorize_correctness():
     labels1 = np.random.randint(0, K, 100)
     labels2 = np.random.randint(0, K, 100)
 
-    f_naive = compose(confmat_normalize_naive, compute_confmat_naive)
-    f_vec = compose(confmat_normalize, compute_confmat)
+    f_naive = compose(confmat_normalize_naive, score_consensus_naive)
+    f_vec = compose(confmat_normalize, score_consensus)
 
     matrix_naive = f_naive(labels1, labels2, K=K)
     matrix_vectorize = f_vec(labels1, labels2, K=K)
@@ -123,8 +123,8 @@ def test_confmat_vectorize_time():
     labels1 = np.random.randint(0, K, 5000)
     labels2 = np.random.randint(0, K, 5000)
 
-    f_naive = compose(confmat_normalize_naive, compute_confmat_naive)
-    f_vec = compose(confmat_normalize, compute_confmat)
+    f_naive = compose(confmat_normalize_naive, score_consensus_naive)
+    f_vec = compose(confmat_normalize, score_consensus)
 
     time_vec = time_function(f_vec, labels1, labels2, K=K)
     time_naive = time_function(f_naive, labels1, labels2, K=K)

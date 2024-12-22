@@ -4,12 +4,8 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch.distributions import Distribution, Gamma, Poisson, constraints
-from torch.distributions.utils import (
-    broadcast_all,
-    lazy_property,
-    logits_to_probs,
-    probs_to_logits,
-)
+from torch.distributions.utils import (broadcast_all, lazy_property,
+                                       logits_to_probs, probs_to_logits)
 
 
 def log_zinb_positive(

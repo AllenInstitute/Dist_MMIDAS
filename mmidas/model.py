@@ -1,20 +1,19 @@
 import glob
-import random
 import math
+import random
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Literal
+from typing import Any, Literal, Mapping
 
+import numpy as np
 import torch as th
-from torch import Tensor
-from torch import nn
+from numpy import ndarray
+from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import numpy as np
-from numpy import ndarray
 
+from mmidas._utils import mk_masks, parse_epoch, to_np, unstable
 from mmidas.nn_model import mixVAE_model, mk_vae
 from mmidas.utils.tools import get_paths
-from mmidas._utils import unstable, mk_masks, to_np, parse_epoch
 
 
 def generic_sum(xs, *args, **kwargs):

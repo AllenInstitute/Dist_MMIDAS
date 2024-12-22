@@ -1,13 +1,13 @@
-from dataclasses import dataclass
 import time
-from typing import Optional, List, Iterable, Sequence, assert_never
+from dataclasses import dataclass
+from typing import Iterable, List, Optional, Sequence, assert_never
 
 import numpy as np
 import torch
 import torch as th
 from torch import nn
-from torch.nn import ModuleList as mdl
 from torch.autograd import Variable
+from torch.nn import ModuleList as mdl
 from torch.nn import functional as F
 
 

@@ -1,9 +1,11 @@
+import time
+
+import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
-import matplotlib.pyplot as plt
-import time
-from mmidas.augmentation.networks import *
+
 from mmidas.augmentation.aug_utils import *
+from mmidas.augmentation.networks import *
 
 eps = 1e-4
 

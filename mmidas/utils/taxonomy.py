@@ -1,9 +1,11 @@
 import json
-from flatten_json import flatten
+from copy import deepcopy
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from copy import deepcopy
+from flatten_json import flatten
+
 
 class Node():
     '''Simple Node class. Each instance contains a list of children and parents.'''

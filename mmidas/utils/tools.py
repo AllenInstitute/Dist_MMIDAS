@@ -1,14 +1,14 @@
 import os
-import toml
-import requests
-from pathlib import Path, PosixPath
-from functools import lru_cache
-from typing import Any
-from pprint import pprint
 from copy import deepcopy
+from functools import lru_cache
+from pathlib import Path, PosixPath
+from pprint import pprint
+from typing import Any
 
 import numpy as np
+import requests
 import scipy.io as sio
+import toml
 from sklearn.preprocessing import normalize
 
 

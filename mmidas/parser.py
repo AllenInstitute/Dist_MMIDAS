@@ -1,5 +1,5 @@
 import operator
-from typing import Callable, Tuple, Any
+from typing import Any, Callable, Tuple
 
 ParserP = Callable[[str], Tuple[Any, str]]
 

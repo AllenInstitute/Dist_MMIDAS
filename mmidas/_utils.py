@@ -1,23 +1,26 @@
+import os
+import random
+import time
+import warnings
+from collections import defaultdict
 from functools import reduce, wraps
 from itertools import product, starmap
-import warnings
-import time
 from typing import List
-import random
-import os
 
-import torch as th
-from torch import nn
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch._dynamo import OptimizedModule
 import numpy as np
+import torch as th
 from scipy.optimize import linear_sum_assignment
+from torch import nn
+from torch._dynamo import OptimizedModule
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-from mmidas.utils.dataloader import load_data, get_loaders
-from mmidas.utils.tools import get_paths
 from mmidas._evals import evals2
-# types: labels, probs, confmat
+from mmidas.utils.dataloader import get_loaders, load_data
+from mmidas.utils.tools import get_paths
+
+# class Converter:
+
 
 
 def compose(*fs):
@@ -26,10 +29,15 @@ def compose(*fs):
 
     return reduce(compose2, fs)
 
+def convert(x, from_, to_):
+    if (from_, to_) == ('B', 'MB'):
+        return to_mb(x)
 
-def mapv(f, assocs):
+def to_mb(bytes):
+    return bytes / 1e6
+
+def mapsnd(f, assocs):
     return starmap(lambda k, v: (k, f(v)), assocs)
-
 
 def set_seeds(s: int) -> None:
     if th.cuda.is_available():
@@ -38,7 +46,6 @@ def set_seeds(s: int) -> None:
     np.random.seed(s)
     random.seed(s)
     os.environ["PYTHONHASHSEED"] = str(s)
-
 
 def time_function(f, *a, **kw):
     """
@@ -60,7 +67,6 @@ def unstable(func):
 
     return wrapper
 
-
 def to_np(x):
     return x.cpu().detach().numpy()
 
@@ -80,7 +86,7 @@ def classify(probs):
 
 
 # Note, if K is None, all labels are assumed to be present in at least one of the arrays
-def compute_confmat(labels1, labels2, K=None):
+def score_consensus(labels1, labels2, K=None):
     assert len(labels1) == len(labels2)
     assert len(labels1.shape) == len(labels2.shape) == 1
     assert labels1.dtype == labels2.dtype == np.int64
@@ -98,7 +104,7 @@ def confmat_normalize(cm):
     return np.divide(cm, maxes, out=np.zeros_like(cm), where=maxes != 0)
 
 
-def compute_confmat_naive(labels1, labels2, K=None):
+def score_consensus_naive(labels1, labels2, K=None):
     assert len(labels1) == len(labels2)
     assert len(labels1.shape) == len(labels2.shape) == 1
     assert labels1.dtype == labels2.dtype == np.int64

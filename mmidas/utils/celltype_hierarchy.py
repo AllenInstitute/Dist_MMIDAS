@@ -1,10 +1,9 @@
-import numpy as np
-import seaborn as sns
-import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 from scipy.optimize import linear_sum_assignment
-from utils.analysis_tree_helpers import parse_dend, get_ancestors
-
+from utils.analysis_tree_helpers import get_ancestors, parse_dend
 
 
 def cell_nodes_dict(treeobj, num_cell=132):

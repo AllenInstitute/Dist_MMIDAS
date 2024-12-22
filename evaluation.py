@@ -10,7 +10,7 @@ from sklearn.metrics.cluster import adjusted_mutual_info_score
 from mmidas.utils.tools import get_paths
 from tqdm import trange
 
-from dist.plot import noExt, mapv
+from dist.plot import noExt, mapsnd
 
 def mk_vae(saving_folder, input_dim, C, state_dim, arms, latent_dim):
   vae = cpl_mixVAE(saving_folder=saving_folder, device='cpu')
@@ -84,7 +84,7 @@ def parse_toml(tf: str, sf: str) -> Mapping[str, Any]:
     'saving': _saving,
     'trained': _trained,
   }
-  return update_key(pmap(mapv(str, _fs.items())), 'saving', lambda x: x + '/model/cpl_mixVAE_model_**', 'pat')
+  return update_key(pmap(mapsnd(str, _fs.items())), 'saving', lambda x: x + '/model/cpl_mixVAE_model_**', 'pat')
 
 def lookup(ks, dct):
   return [dct[k] for k in ks]

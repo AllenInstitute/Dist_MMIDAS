@@ -1,8 +1,9 @@
 import json
+from copy import deepcopy
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from copy import deepcopy
 
 
 def _construct_key(previous_key, separator, new_key, replace_separators=None):

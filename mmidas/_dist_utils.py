@@ -1,9 +1,9 @@
 import builtins
-from functools import partial
 import os
 import signal
-from datetime import timedelta
 import socket
+from datetime import timedelta
+from functools import partial
 
 import torch
 import torch.distributed as dist

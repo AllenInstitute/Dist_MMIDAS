@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from mmidas.augmentation.aug_utils import *
+
 
 def narange(*dims, device='mps', requires_grad=False):
     return torch.arange(torch.prod(torch.tensor(dims)), device=device, requires_grad=requires_grad, dtype=torch.float32).reshape(*dims)
