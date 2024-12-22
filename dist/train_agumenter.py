@@ -64,7 +64,7 @@ def main(latent_dim, n_epoch, lr, alpha, ws, dim_noise, batch_size, loss_mode, d
                 }
     
     # Load data
-    data = load_data(datafile=data_file)
+    data = load_data(data_file)
     trainloader, testloader, _ = get_loaders(dataset=data['log1p'], batch_size=batch_size)
 
     parameters['n_features'] = data.data['log1p'].shape[-1]

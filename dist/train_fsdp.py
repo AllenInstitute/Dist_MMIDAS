@@ -50,7 +50,7 @@ def main(n_categories, n_arm, state_dim, latent_dim, fc_dim, n_epoch, n_epoch_p,
         trained_model = ''
 
     # Load data
-    data_dict = load_data(datafile=data_file)
+    data_dict = load_data(data_file)
     print("Data loaded successfully!")
     print(f"Number of cells: {data_dict['log1p'].shape[0]}, Number of genes: {data_dict['log1p'].shape[1]}")
 

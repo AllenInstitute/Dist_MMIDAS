@@ -430,7 +430,7 @@ def fsdp_main(rank, world_size, args):
     else:
         trained_model = ''
 
-    data = load_data(datafile=data_file)
+    data = load_data(data_file)
 
     
     cplMixVAE = cpl_mixVAE(saving_folder=saving_folder,

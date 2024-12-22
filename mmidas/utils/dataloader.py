@@ -11,11 +11,11 @@ from mmidas.utils.tools import get_paths
 
 
 def load_data(
-    datafile, n_gene=0, gene_id=[], rmv_type=[], min_num=10, eps=1e-1, tau=1.0
+    file, n_gene=0, gene_id=[], rmv_type=[], min_num=10, eps=1e-1, tau=1.0
 ):
-    adata = anndata.read_h5ad(datafile)
+    adata = anndata.read_h5ad(file)
 
-    print(adata)
+    print("adata:, ", adata)
 
     data = dict()
     data["log1p"] = adata.X
@@ -93,22 +93,24 @@ def get_loaders(
     world_size=1,
     rank=0,
 ):
-    if len(label) > 0:
-        train_ind, val_ind, test_ind = [], [], []
-        for ll in np.unique(label):
-            indx = np.where(label == ll)[0]
-            tt_size = int(train_size * sum(label == ll))
-            _, _, train_subind, test_subind = data_gen(dataset, tt_size, seed)
-            train_ind.append(indx[train_subind])
-            test_ind.append(indx[test_subind])
+    assert len(label) == 0
+    tt_size = int(train_size * dataset.shape[0])
+    train_set, test_set, train_ind, test_ind = data_gen(dataset, tt_size, seed)
 
-        train_ind = np.concatenate(train_ind)
-        test_ind = np.concatenate(test_ind)
-        train_set = dataset[train_ind, :]
-        test_set = dataset[test_ind, :]
-    else:
-        tt_size = int(train_size * dataset.shape[0])
-        train_set, test_set, train_ind, test_ind = data_gen(dataset, tt_size, seed)
+    # if len(label) > 0:
+    #     train_ind, val_ind, test_ind = [], [], []
+    #     for ll in np.unique(label):
+    #         indx = np.where(label == ll)[0]
+    #         tt_size = int(train_size * sum(label == ll))
+    #         _, _, train_subind, test_subind = data_gen(dataset, tt_size, seed)
+    #         train_ind.append(indx[train_subind])
+    #         test_ind.append(indx[test_subind])
+
+    #     train_ind = np.concatenate(train_ind)
+    #     test_ind = np.concatenate(test_ind)
+    #     train_set = dataset[train_ind, :]
+    #     test_set = dataset[test_ind, :]
+
 
     train_data = TensorDataset(
         th.tensor(train_set, dtype=th.float32), th.tensor(train_ind, dtype=th.float32)

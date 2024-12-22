@@ -296,7 +296,7 @@ class cpl_mixVAE:
             data_file_id: the output dictionary.
         """
         dirname = f"K{self.n_categories}_S{self.state_dim}_AUG{self.netA is not None}_LR{self.optimizer.param_groups[0]['lr']}_A{self.n_arm}_B{train_loader.batch_size}_E{n_epoch}_Ep{n_epoch_p}"
-        dirname = "results/" + dirname
+        dirname = "results/" + dirname + time.strftime("_%Y-%m-%d-%H-%M-%S")
         print(f" -- making directory directory: {dirname}")
         os.makedirs(dirname, exist_ok=True)
         os.makedirs(f"{dirname}/model", exist_ok=True)
