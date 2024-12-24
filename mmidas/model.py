@@ -2,7 +2,8 @@ import glob
 import math
 import random
 from abc import ABC, abstractmethod
-from typing import Any, Literal, Mapping
+from dataclasses import dataclass
+from typing import Any, Literal, Mapping, Callable
 
 import numpy as np
 import torch as th
@@ -51,6 +52,32 @@ def is_normalized(xs):
         return generic_sum(xs, axis=-1) == 1
     else:
         return generic_sum(xs) == 1
+    
+@dataclass
+class VAEConfig:
+    n_categories: int = 92
+    state_dim: int = 2
+    input_dim: int = 5032
+    hidden_dim: int = 100 # fc_dim
+    latent_dim: int = 10 # latent dim
+    x_drop: float = 0.5
+    s_drop: float = 0.2
+    lam: float = 1
+    lam_pc: float = 1
+    n_arm: int = 2
+    temp: float = 1.0
+    tau: float = 0.005
+    beta: float = 1.0
+    hard: bool = False
+    variational: bool = True
+    ref_prior: bool = False
+    n_pr: int = 0
+    mode: str = "MSE"
+
+@dataclass
+class OptimizationConfig:
+    lr: float = 0.001
+    momentum: float = 0.01
 
 # TODO
 def clr(prob: Tensor):
@@ -61,16 +88,38 @@ def reparam(mean: Tensor, logvar: Tensor) -> Tensor:
 
 class Autoencoder(ABC):
     @abstractmethod
+    def _encoder_impl(self, x: Tensor) -> Tensor:
+        ...
+
+    @abstractmethod
+    def _decoder_impl(self, x: Tensor) -> Tensor:
+        ...
+
     def encode(self, x: Tensor) -> Tensor:
-        ...
+        return self._encoder_impl(x)
 
-    @abstractmethod
     def decode(self, x: Tensor) -> Tensor:
-        ...
+        return self._decoder_impl(x)
 
-    @abstractmethod
-    def forward(self, x: Tensor) -> Tensor:
+    def call(self, x: Tensor) -> Tensor:
+        return self.decode(self.encode(x))
+    
+class MLP(nn.Module):
+    def __init__(self, config):
         ...
+    
+
+class VAE(Autoencoder, nn.Module):
+    def __init__(self, encoder: Callable, decoder: Callable):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def _encoder_impl(self, x: Tensor) -> Tensor:
+        return self.encoder(x)
+    
+    def _decoder_impl(self, x: Tensor) -> Tensor:
+        return self.decoder(x)
 
 @unstable
 def generate(f: nn.Module, dl: DataLoader) -> Mapping[str, Any]:
@@ -238,59 +287,59 @@ def load_weights(m: nn.Module, f: str) -> None:
     m.load_state_dict(th.load(f, map_location="cpu")["model_state_dict"])
 
 
-class VAE(nn.Module):
-    # TODO: Add dropout
-    def __init__(self, input_dim: int, hidden_dim: int, embed_dim: int, state_dim: int, cat_dim: int):
-        super().__init__()
+# class VAE(nn.Module):
+#     # TODO: Add dropout
+#     def __init__(self, input_dim: int, hidden_dim: int, embed_dim: int, state_dim: int, cat_dim: int):
+#         super().__init__()
 
-        D = input_dim
-        H = hidden_dim
-        E = embed_dim
-        S = state_dim
-        K = cat_dim
+#         D = input_dim
+#         H = hidden_dim
+#         E = embed_dim
+#         S = state_dim
+#         K = cat_dim
 
-        self.encoder = nn.Sequential(
-            nn.Linear(D, H),
-            nn.ReLU(),
-            nn.Linear(H, H),
-            nn.ReLU(),
-            nn.Linear(H, H),
-            nn.ReLU(),
-            nn.Linear(H, H),
-            nn.ReLU(),
-            nn.Linear(H, E),
-        )
+#         self.encoder = nn.Sequential(
+#             nn.Linear(D, H),
+#             nn.ReLU(),
+#             nn.Linear(H, H),
+#             nn.ReLU(),
+#             nn.Linear(H, H),
+#             nn.ReLU(),
+#             nn.Linear(H, H),
+#             nn.ReLU(),
+#             nn.Linear(H, E),
+#         )
 
-        # x |-> c
-        self.fc_cat = nn.Linear(E, K)
-        # (x, c) |-> (s_mean, s_logvar)
-        self.fc_state_mean = nn.Linear(E + K, S)
-        self.fc_state_logvar = nn.Linear(E + K, S)
-        # (s, c) |-> x_low
-        self.fc_embed = nn.Linear(S + K, E)
+#         # x |-> c
+#         self.fc_cat = nn.Linear(E, K)
+#         # (x, c) |-> (s_mean, s_logvar)
+#         self.fc_state_mean = nn.Linear(E + K, S)
+#         self.fc_state_logvar = nn.Linear(E + K, S)
+#         # (s, c) |-> x_low
+#         self.fc_embed = nn.Linear(S + K, E)
 
-        self.decoder = nn.Sequential(
-            nn.Linear(E, H),
-            nn.ReLU(),
-            nn.Linear(H, H),
-            nn.ReLU(),
-            nn.Linear(H, H),
-            nn.ReLU(),
-            nn.Linear(H, H),
-            nn.ReLU(),
-            nn.Linear(H, D),
-        )
+#         self.decoder = nn.Sequential(
+#             nn.Linear(E, H),
+#             nn.ReLU(),
+#             nn.Linear(H, H),
+#             nn.ReLU(),
+#             nn.Linear(H, H),
+#             nn.ReLU(),
+#             nn.Linear(H, H),
+#             nn.ReLU(),
+#             nn.Linear(H, D),
+#         )
 
-    # TODO: not correct
-    def forward(self, x):
-        x = self.encoder(x)
-        c_scores = self.fc_cat(x)
-        s_mean = self.fc_state_mean(th.cat((x, c_scores), dim=-1))
-        s_logvar = self.fc_state_logvar(th.cat((x, c_scores), dim=-1))
-        s = s_mean + th.randn_like(s_mean) * th.exp(0.5 * s_logvar)
-        x_low = self.fc_embed(th.cat((s, c_scores), dim=-1))
-        x_rec = self.decoder(x_low)
-        return x_rec, c_scores, s_mean, s_logvar
+#     # TODO: not correct
+#     def forward(self, x):
+#         x = self.encoder(x)
+#         c_scores = self.fc_cat(x)
+#         s_mean = self.fc_state_mean(th.cat((x, c_scores), dim=-1))
+#         s_logvar = self.fc_state_logvar(th.cat((x, c_scores), dim=-1))
+#         s = s_mean + th.randn_like(s_mean) * th.exp(0.5 * s_logvar)
+#         x_low = self.fc_embed(th.cat((s, c_scores), dim=-1))
+#         x_rec = self.decoder(x_low)
+#         return x_rec, c_scores, s_mean, s_logvar
 
 
 class MMIDAS(nn.Module): ...

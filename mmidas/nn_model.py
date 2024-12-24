@@ -11,31 +11,6 @@ from torch.nn import ModuleList as mdl
 from torch.nn import functional as F
 
 
-@dataclass
-class VAEConfig:
-    n_categories: int = 92
-    state_dim: int = 2
-    input_dim: int = 5032
-    fc_dim: int = 100
-    lowD_dim: int = 10
-    x_drop: float = 0.5
-    s_drop: float = 0.2
-    lr: float = 0.001
-    lam: float = 1
-    lam_pc: float = 1
-    n_arm: int = 2
-    temp: float = 1.0
-    tau: float = 0.005
-    beta: float = 1.0
-    hard: bool = False
-    variational: bool = True
-    ref_prior: bool = False
-    trained_model: Optional[str] = None
-    n_pr: int = 0
-    momentum: float = 0.01
-    mode: str = "MSE"
-
-
 def binarize(x, eps):
     return th.where(x > eps, 1.0, 0.0)
 
