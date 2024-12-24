@@ -76,10 +76,7 @@ def inv_var(p: th.Tensor, eps: float) -> th.Tensor:
     if p.dim() == 2:
         return (1 / (p.var(0) + eps)).repeat(p.shape[0], 1).sqrt()
     elif p.dim() == 3:
-        var = p.var(dim=1, keepdim=True)  # Compute variance across the second dimension
-        return (
-            1 / (var + eps)
-        ).sqrt()  # No need to repeat, as the shape is already 2x1x784
+        return th.sqrt(1 / (p.var(dim=1, keepdim=True) + eps))
 
 
 def avg[T](x: Sequence[T]) -> T:
@@ -614,6 +611,8 @@ class mixVAE_model(nn.Module):
                 )
         return sum(c_dists) / len(c_dists)
 
+    # @th.compile
+    # TODO: remove call to inv_var
     def loss_vectorize(self, cs: th.Tensor) -> th.Tensor:
         assert not self.ref_prior
         assert len(cs) == self.n_arm

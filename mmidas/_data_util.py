@@ -1,8 +1,63 @@
+import numpy as np
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import datasets, transforms
 
+
 from typing import Callable
+
+def visualize(dataloader, class_names, n=16, figsize=(10, 10)):
+    """
+    Visualize n random samples from a dataloader with their class labels.
+    
+    Args:
+        dataloader: PyTorch DataLoader object
+        class_names: Dictionary mapping class indices to class names
+        n: Number of samples to visualize (default: 16)
+        figsize: Figure size for the plot (default: (10, 10))
+    """
+    # Get a batch of images
+    images, labels = next(iter(dataloader))
+    
+    # Generate random indices
+    total_samples = len(images)
+    indices = np.random.choice(total_samples, min(n, total_samples), replace=False)
+    
+    # Select random samples
+    selected_images = images[indices]
+    selected_labels = labels[indices]
+    
+    # Handle grayscale images
+    if selected_images.shape[1] == 1:
+        selected_images = selected_images.repeat(1, 3, 1, 1)
+    
+    # Create subplot for each image with its label
+    rows = int(np.sqrt(n))
+    cols = int(np.ceil(n / rows))
+    fig, axes = plt.subplots(rows, cols, figsize=figsize)
+    axes = axes.ravel()
+    
+    for idx, (img, label) in enumerate(zip(selected_images, selected_labels)):
+        # Convert from (C,H,W) to (H,W,C)
+        if img.shape[0] == 3 or img.shape[0] == 1:
+            img = img.permute(1, 2, 0)
+        img = img.numpy()
+        
+        # If single channel, squeeze the channel dimension
+        if img.shape[-1] == 1:
+            img = img.squeeze()
+            
+        axes[idx].imshow(img, cmap='gray' if len(img.shape) == 2 else None)
+        axes[idx].axis('off')
+        axes[idx].set_title(f'Class: {class_names[label.item()]}')
+    
+    # Hide empty subplots
+    for idx in range(len(selected_images), len(axes)):
+        axes[idx].axis('off')
+        
+    plt.tight_layout()
+    plt.show()
 
 _dataset_registry = {}
 
