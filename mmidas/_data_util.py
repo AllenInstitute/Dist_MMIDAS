@@ -87,8 +87,7 @@ def _split_data(train, split=0.8):
 
 def _load_mnist(batch_size,  test_batch_size=None):
     transform = transforms.Compose([transforms.ToTensor(),
-                                    transforms.Normalize((0.1307,), (0.3081,)),
-                                    transforms.Lambda(lambda x: x.squeeze(0))])
+                                    transforms.Normalize((0.1307,), (0.3081,))])
     return _generic_load(datasets.MNIST, transform, batch_size, test_batch_size)
     
 
