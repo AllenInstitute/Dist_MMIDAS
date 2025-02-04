@@ -7,52 +7,16 @@ from typing import Any, Literal, Mapping, Callable
 
 import numpy as np
 import torch as th
-from numpy import ndarray
-from torch import Tensor, nn
+from torch import nn
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from tqdm import tqdm
 
-from mmidas._utils import mk_masks, parse_epoch, to_np, unstable
+from mmidas._utils import mk_masks, parse_epoch, to_np, unstable, is_normalized
 from mmidas.nn_model import mixVAE_model, mk_vae
 from mmidas.utils.tools import get_paths
 
 
-def generic_sum(xs, *args, **kwargs):
-    if isinstance(xs, Tensor):
-        return th.sum(xs, *args, **kwargs)
-    elif isinstance(xs, ndarray):
-        return np.sum(xs, *args, **kwargs)
-    else:
-        return sum(xs)
-    
-def sample_normal():
-    return math.sqrt(-2 * math.log(random.random())) * math.cos(2 * math.pi * random.random())
-    
-def generic_randn(shape, backend='torch', *args, **kwargs):
-    if backend == 'torch':
-        return th.randn(*shape, *args, **kwargs)
-    elif backend == 'numpy':
-        return np.random.randn(*shape)
-    elif backend == 'python':
-        return [sample_normal() for _ in range(shape[0])]
-
-    
-def generic_all(xs, *args, **kwargs):
-    if isinstance(xs, Tensor):
-        return th.all(xs, *args, **kwargs)
-    elif isinstance(xs, ndarray):
-        return np.all(xs, *args, **kwargs)
-    else:
-        return all(xs)
-
-def is_normalized(xs):
-    if isinstance(xs, Tensor):
-        return generic_sum(xs, dim=-1) == 1
-    elif isinstance(xs, ndarray):
-        return generic_sum(xs, axis=-1) == 1
-    else:
-        return generic_sum(xs) == 1
     
 @dataclass
 class VAEConfig:
@@ -80,12 +44,15 @@ class OptimizationConfig:
     lr: float = 0.001
     momentum: float = 0.01
 
-# TODO
-def clr(prob: Tensor):
-    assert th.all((prob >= 0) & (prob <= 1)) and is_normalized(prob)
 
-def reparam(mean: Tensor, logvar: Tensor) -> Tensor:
+# TODO
+def clr(prob: th.Tensor):
+    assert th.all((prob >= 0) & (prob <= 1)) and th.sum(prob, dim=-1) == 1
+
+
+def reparam(mean: th.Tensor, logvar: th.Tensor) -> th.Tensor:
     return mean + th.randn_like(mean) * th.exp(0.5 * logvar)
+
 
 class Net(nn.Module):
   def __init__(self):
@@ -113,40 +80,30 @@ class Net(nn.Module):
     return output
 
 
-class Autoencoder(ABC):
-    @abstractmethod
-    def _encoder_impl(self, x: Tensor) -> Tensor:
-        ...
-
-    @abstractmethod
-    def _decoder_impl(self, x: Tensor) -> Tensor:
-        ...
-
-    def encode(self, x: Tensor) -> Tensor:
-        return self._encoder_impl(x)
-
-    def decode(self, x: Tensor) -> Tensor:
-        return self._decoder_impl(x)
-
-    def call(self, x: Tensor) -> Tensor:
-        return self.decode(self.encode(x))
     
 class MLP(nn.Module):
     def __init__(self, config):
         ...
     
 
-class VAE(Autoencoder, nn.Module):
+class VAE(nn.Module):
     def __init__(self, encoder: Callable, decoder: Callable):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
 
-    def _encoder_impl(self, x: Tensor) -> Tensor:
+    def encode(self, x):
         return self.encoder(x)
     
-    def _decoder_impl(self, x: Tensor) -> Tensor:
-        return self.decoder(x)
+    def decode(self, z):
+        return self.decoder(z)
+
+    def forward(self, x):
+        ...
+    
+
+class MMIDAS(nn.Module): 
+    ...
 
 @unstable
 def generate(f: nn.Module, dl: DataLoader) -> Mapping[str, Any]:
@@ -367,9 +324,6 @@ def load_weights(m: nn.Module, f: str) -> None:
 #         x_low = self.fc_embed(th.cat((s, c_scores), dim=-1))
 #         x_rec = self.decoder(x_low)
 #         return x_rec, c_scores, s_mean, s_logvar
-
-
-class MMIDAS(nn.Module): ...
 
 
 class Augmenter(nn.Module): ...

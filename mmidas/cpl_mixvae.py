@@ -34,7 +34,7 @@ from mmidas._utils import (classify, confmat_mean, confmat_normalize,
                            score_consensus, convert, to_np)
 
 from .augmentation.udagan import *
-from .nn_model import VAEConfig, mixVAE_model
+from .nn_model import mixVAE_model
 
 
 def is_master(rank):

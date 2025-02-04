@@ -2,6 +2,7 @@ import os
 import random
 import time
 import warnings
+import math
 from collections import defaultdict
 from functools import reduce, wraps
 from itertools import product, starmap
@@ -37,6 +38,58 @@ def convert(x, from_, to_):
     return converter.convert(x, from_, to_)
 
 
+def dedup(xs):
+    def go(xs, acc):
+        match xs:
+            case []:
+                return acc
+            case [x, *xs] if x not in acc:
+                return go(xs, acc + [x])
+            case [x, *xs]:
+                return go(xs, acc)
+    return go(xs, [])
+
+
+def sample_normal():
+    return math.sqrt(-2 * math.log(random.random())) * math.cos(2 * math.pi * random.random())
+
+
+def generic_sum(xs, *args, **kwargs):
+    if isinstance(xs, th.Tensor):
+        return th.sum(xs, *args, **kwargs)
+    elif isinstance(xs, np.ndarray):
+        return np.sum(xs, *args, **kwargs)
+    else:
+        return sum(xs)
+    
+
+
+def generic_all(xs, *args, **kwargs):
+    if isinstance(xs, th.Tensor):
+        return th.all(xs, *args, **kwargs)
+    elif isinstance(xs, np.ndarray):
+        return np.all(xs, *args, **kwargs)
+    else:
+        return all(xs)
+
+def is_normalized(xs):
+    if isinstance(xs, th.Tensor):
+        return generic_sum(xs, dim=-1) == 1
+    elif isinstance(xs, np.ndarray):
+        return generic_sum(xs, axis=-1) == 1
+    else:
+        return generic_sum(xs) == 1
+
+
+def generic_randn(shape, backend='torch', *args, **kwargs):
+    if backend == 'torch':
+        return th.randn(*shape, *args, **kwargs)
+    elif backend == 'numpy':
+        return np.random.randn(*shape)
+    elif backend == 'python':
+        return [sample_normal() for _ in range(shape[0])]
+    
+
 def compose(*fs):
     def compose2(f, g):
         return lambda *a, **kw: f(g(*a, **kw))
@@ -54,6 +107,17 @@ def set_seeds(s: int) -> None:
     random.seed(s)
     os.environ["PYTHONHASHSEED"] = str(s)
 
+
+def timeize(f):
+    @wraps(f)
+    def wrapper(*a, **kw):
+        tic = time.time()
+        res = f(*a, **kw)
+        toc = time.time()
+        return res, toc - tic
+
+    return wrapper
+
 def time_function(f, *a, **kw):
     """
     Call a function f with args and return the time (in seconds) that it took to execute.
@@ -64,13 +128,13 @@ def time_function(f, *a, **kw):
     return toc - tic
 
 
-def unstable(func):
-    @wraps(func)
+def unstable(f):
+    @wraps(f)
     def wrapper(*args, **kwargs):
         warnings.warn(
-            f"{func.__name__}() is unstable", category=FutureWarning, stacklevel=2
+            f"{f.__name__}() is unstable", category=FutureWarning, stacklevel=2
         )
-        return func(*args, **kwargs)
+        return f(*args, **kwargs)
 
     return wrapper
 
@@ -92,18 +156,21 @@ def classify(probs):
     return np.argmax(probs, axis=-1)
 
 
+def is_flat(xs):
+    return len(xs.shape) == 1
+
+
 # Note, if K is None, all labels are assumed to be present in at least one of the arrays
-def score_consensus(labels1, labels2, K=None):
-    assert len(labels1) == len(labels2)
-    assert len(labels1.shape) == len(labels2.shape) == 1
-    assert labels1.dtype == labels2.dtype == np.int64
+# TODO: remove the K=None option
+def score_consensus(xs, ys, K):
+    assert is_flat(xs) and is_flat(ys) and len(xs) == len(ys)
 
     if K is None:
-        K = max(len(np.unique(labels1)), len(np.unique(labels2)))
+        K = max(len(np.unique(xs)), len(np.unique(ys)))
 
-    matrix = np.zeros((K, K))
-    np.add.at(matrix, (labels1, labels2), 1)
-    return matrix
+    xss = np.zeros((K, K))
+    np.add.at(xss, (xs, ys), 1)
+    return xss
 
 
 def confmat_normalize(cm):
@@ -111,7 +178,7 @@ def confmat_normalize(cm):
     return np.divide(cm, maxes, out=np.zeros_like(cm), where=maxes != 0)
 
 
-def score_consensus_naive(labels1, labels2, K=None):
+def score_consensus_naive(labels1, labels2, K):
     assert len(labels1) == len(labels2)
     assert len(labels1.shape) == len(labels2.shape) == 1
     assert labels1.dtype == labels2.dtype == np.int64
