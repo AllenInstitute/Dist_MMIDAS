@@ -38,6 +38,25 @@ def convert(x, from_, to_):
     return converter.convert(x, from_, to_)
 
 
+def sample(xs, n):
+    def go(n, acc):
+        if n == 0:
+            return acc
+        else:
+            return go(n - 1, acc + [random.choice(xs)])
+    return go(n, [])
+
+
+def unzip(xs):
+    def go(xs, acc1, acc2):
+        match xs:
+            case []:
+                return acc1, acc2
+            case [(x, y), *xs]:
+                return go(xs, acc1 + [x], acc2 + [y])
+    return go(xs, [], [])
+
+
 def dedup(xs):
     def go(xs, acc):
         match xs:
@@ -160,36 +179,56 @@ def is_flat(xs):
     return len(xs.shape) == 1
 
 
+# TODO
+def uadd(xs, ys):
+    raise NotImplementedError
+
+
 # Note, if K is None, all labels are assumed to be present in at least one of the arrays
-# TODO: remove the K=None option
-def score_consensus(xs, ys, K):
+def score_consensus(xs, ys, n):
+    assert is_flat(xs) and is_flat(ys) and len(xs) == len(ys)
+    acc = np.zeros((n, n))
+    np.add.at(acc, (xs, ys), 1)
+    return acc
+
+
+def confmat_normalize(xss):
+    ms = np.maximum(np.sum(xss, axis=0), np.sum(xss, axis=1)) # maxes
+    return np.divide(xss, ms, out=np.zeros_like(xss), where=ms != 0)
+
+
+# TODO: index into xs and ys at once with np.arange(n)
+# TODO: test
+def score_consensus_rec(xs, ys, n):
     assert is_flat(xs) and is_flat(ys) and len(xs) == len(ys)
 
-    if K is None:
-        K = max(len(np.unique(xs)), len(np.unique(ys)))
+    acc = np.zeros((n, n))
+    def go(n):
+        if n == 0:
+            return
+        else:
+            acc[xs[n - 1], ys[n - 1]] += 1
+            go(n - 1)
 
-    xss = np.zeros((K, K))
-    np.add.at(xss, (xs, ys), 1)
-    return xss
+    def go2(xs, ys):
+        match xs, ys:
+            case ([], _) | (_, []):
+                raise ValueError
+            case [], []:
+                return
+            case [x, *xs], [y, *ys]:
+                acc[x, y] += 1
+                go2(xs, ys)
 
+    go(len(xs)); assert np.allclose(acc, score_consensus(xs, ys, n)), (acc, score_consensus(xs, ys, n))
+    return acc
 
-def confmat_normalize(cm):
-    maxes = np.maximum(np.sum(cm, axis=0), np.sum(cm, axis=1))
-    return np.divide(cm, maxes, out=np.zeros_like(cm), where=maxes != 0)
-
-
-def score_consensus_naive(labels1, labels2, K):
-    assert len(labels1) == len(labels2)
-    assert len(labels1.shape) == len(labels2.shape) == 1
-    assert labels1.dtype == labels2.dtype == np.int64
-
-    if K is None:
-        K = max(len(np.unique(labels1)), len(np.unique(labels2)))
-
-    matrix = np.zeros((K, K))
-    for i in range(len(labels1)):
-        matrix[labels1[i], labels2[i]] += 1
-    return matrix
+def score_consensus_naive(xs, ys, K):
+    assert is_flat(xs) and is_flat(ys) and len(xs) == len(ys)
+    acc = np.zeros((K, K))
+    for i in range(len(xs)):
+        acc[xs[i], ys[i]] += 1
+    return acc
 
 
 def confmat_normalize_naive(cm):

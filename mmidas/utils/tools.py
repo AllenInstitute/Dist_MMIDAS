@@ -12,6 +12,29 @@ import toml
 from sklearn.preprocessing import normalize
 
 
+def join_path(xs):
+    def go(xs, acc):
+        match xs:
+            case []:
+                return acc
+            case [x, *xs] if x.startswith("/") and acc != "":
+                return x
+            case [x, *xs]:
+                return go(xs, acc + "/" + x)
+            
+    match xs:
+        case []:
+            raise ValueError("Must provide at least one path")
+        case [x, *xs]:
+            y = go(xs, x); assert y == os.path.join(*[x, *xs]), (y, os.path.join(*[x, *xs]))
+            return y
+
+
+# TODO
+def load_toml():
+    raise NotImplementedError
+
+
 def get_paths(config_filename: str, dataset: str = "files", verbose=False) -> dict[str, Any]:
     """Loads dictionary with path names and any other variables set through xxx.toml
 

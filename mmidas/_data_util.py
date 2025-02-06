@@ -1,3 +1,6 @@
+from typing import Callable
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -5,7 +8,14 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import datasets, transforms
 
 
-from typing import Callable
+def viz(xs):
+    fig, ax = plt.subplots(1, len(xs))
+    for i, x in enumerate(xs):
+        ax[i].imshow(x)
+        ax[i].axis("off")
+    plt.show()
+
+
 
 def visualize(dataloader, class_names, n=16, figsize=(10, 10)):
     """

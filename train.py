@@ -45,6 +45,7 @@ def treemap(fn, tree):
         return {k: treemap(fn, v) for k, v in tree.items()}
     else:
         return fn(tree)
+    
 
 def load_config(file: str) -> Mapping[str, Any]:
     with open(file, 'r') as f:
