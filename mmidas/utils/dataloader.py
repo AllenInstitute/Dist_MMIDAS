@@ -12,11 +12,11 @@ from mmidas.utils.tools import get_paths
 
 
 def load_data(
-    file, n_gene=0, gene_id=[], rmv_type=[], min_num=10, eps=1e-1, tau=1.0
+    path, n_gene=0, gene_id=[], rmv_type=[], min_num=10, eps=1e-1, tau=1.0
 ):
-    adata = anndata.read_h5ad(file)
+    adata = anndata.read_h5ad(path)
 
-    print("adata:, ", adata)
+    print("adata:\n", adata)
 
     data = dict()
     data["log1p"] = adata.X

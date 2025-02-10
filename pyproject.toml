@@ -20,6 +20,9 @@ dependencies = [
     "torch>=2.5.1",
     "torchvision>=0.20.1",
     "hypothesis>=6.122.6",
+    "flatten-json>=0.1.14",
+    "toolz>=1.0.0",
+    "hy>=1.0.0",
 ]
 
 [build-system]

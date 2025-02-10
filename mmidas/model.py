@@ -13,7 +13,7 @@ from torch.nn import functional as F
 from tqdm import tqdm
 
 from mmidas._utils import mk_masks, parse_epoch, to_np, unstable, is_normalized
-from mmidas.nn_model import mixVAE_model, mk_vae
+from mmidas.nn_model import mixVAE_model, make_mmidas
 from mmidas.utils.tools import get_paths
 
 
@@ -207,13 +207,13 @@ Dataset = MouseSmartSeq | Mouse10x | SeattleAlzheimer
 
 def load_vae(arms: int, run: int, epochs: int, input_dim: int) -> MixVAE:
     r = mk_run(arms, run, epochs)
-    vae = mk_vae(**_mk_vae_cfg(arms, input_dim))
+    vae = make_mmidas(**_make_mmidas_cfg(arms, input_dim))
     print(get_weights(r, MouseSmartSeq))
     load_weights(vae, get_weights(r, MouseSmartSeq))
     return vae
 
 
-def _mk_vae_cfg(A: int, input_dim: int) -> Mapping[str, Any]:
+def _make_mmidas_cfg(A: int, input_dim: int) -> Mapping[str, Any]:
     return {
         "C": 92,
         "state_dim": 2,

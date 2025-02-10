@@ -6,12 +6,7 @@ from torch.nn import functional as F
 import tqdm
 
 # TODO: Refactor with tensordict
-def generic_train(model, opt, data, val_data=None, epochs=1, loss_fn=F.nll_loss, device=None):
-    if device is None:
-        device = next(model.parameters()).device
-
-    model = model.to(device)
-
+def generic_train(model, opt, train_data, val_data, epochs, loss_fn, device, f):
     metrics = {
         'train_loss': 0,
         'train_acc': 0,
@@ -30,19 +25,17 @@ def generic_train(model, opt, data, val_data=None, epochs=1, loss_fn=F.nll_loss,
         if metrics['val_loss'] is not None:
             desc += f' | val_loss: {metrics["val_loss"]:.4f} | val_acc: {metrics["val_acc"]:.4f}'
 
-        for (x, y) in (pbar := tqdm.tqdm(data, leave=False, desc=desc)):
+        for x, y in (pbar := tqdm.tqdm(train_data, leave=False, desc=desc)):
             x, y = x.to(device), y.to(device)
 
             opt.zero_grad()
-            y_hat = model(x)
+            y_hat = f(model)(x)
             loss = loss_fn(y_hat, y)
             loss.backward()
             opt.step()
 
-            # batch_loss = loss.item()
-            # batch_acc = (y_hat.argmax(dim=-1) == y).float().mean().item()
             metrics['train_loss'] = loss.item()
-            metrics['train_acc'] = (y_hat.argmax(dim=-1) == y).float().mean().item()
+            metrics['train_acc'] = th.argmax(y_hat, dim=-1).float().mean().item()
             metrics['total_loss'] += loss.item()
             metrics['n_samples'] += len(x)
 
@@ -54,13 +47,8 @@ def generic_train(model, opt, data, val_data=None, epochs=1, loss_fn=F.nll_loss,
         if val_data is not None:
             model.eval()
             with th.no_grad():
-                metrics['val_loss'], metrics['val_acc'] = generic_eval(model, val_data, loss_fn=loss_fn, device=device)
+                metrics['val_loss'], metrics['val_acc'] = generic_eval(model, val_data, loss_fn=loss_fn, device=device, f=f)
 
-            # pbar.set_description(f'train/loss: {loss.item():.4f} | train/acc: {batch_acc:.4f}')
-
-    # print('train completed in:', time.time() - tic)
-    # print('final train loss:', metrics['train_loss']:.4f)
-    # print('final train acc:', metrics['train_acc']:.4f)
     print(f'train completed in: {time.time() - tic:.2f}s')
     print(f'final train loss: {metrics["train_loss"]:.4f}')
     print(f'final train acc: {metrics["train_acc"]:.4f}')
@@ -68,10 +56,9 @@ def generic_train(model, opt, data, val_data=None, epochs=1, loss_fn=F.nll_loss,
         print(f'final val loss: {metrics["val_loss"]:.4f}')
         print(f'final val acc: {metrics["val_acc"]:.4f}')
 
-    # return total_loss / n_samples
     return metrics
 
-def generic_eval(model, data, loss_fn=F.nll_loss, device=None):
+def generic_eval(model, data, loss_fn=F.nll_loss, device=None, f=lambda x: x):
     if device is None:
         device = next(model.parameters()).device
 
@@ -86,7 +73,7 @@ def generic_eval(model, data, loss_fn=F.nll_loss, device=None):
         for (x, y) in data:
             x, y = x.to(device), y.to(device)
 
-            y_hat = model(x)
+            y_hat = f(model)(x)
             loss = loss_fn(y_hat, y)
 
             n_correct += (y_hat.argmax(dim=-1) == y).float().sum().item()

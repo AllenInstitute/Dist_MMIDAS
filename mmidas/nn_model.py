@@ -650,11 +650,12 @@ def zinb_loss(rec_x, x_p, x_r, X, eps=1e-6):
     return l_zinb
 
 
-def mk_vae(
-    C,
+def make_mmidas(
+    n_categories,
     state_dim,
     input_dim,
     device,
+    n_arm,
     eps=1e-8,
     fc_dim=100,
     latent_dim=10,
@@ -663,7 +664,6 @@ def mk_vae(
     lr=0.001,
     lam=1,
     lam_pc=1,
-    A=2,
     tau=0.005,
     beta=1.0,
     hard=False,
@@ -675,12 +675,12 @@ def mk_vae(
     return mixVAE_model(
         input_dim=input_dim,
         fc_dim=fc_dim,
-        n_categories=C,
+        n_categories=n_categories,
         state_dim=state_dim,
         lowD_dim=latent_dim,
         x_drop=x_drop,
         s_drop=s_drop,
-        n_arm=A,
+        n_arm=n_arm,
         lam=lam,
         lam_pc=lam_pc,
         tau=tau,

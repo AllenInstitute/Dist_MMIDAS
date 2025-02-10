@@ -80,7 +80,7 @@ class HTree():
         #Set class attributes using dataframe columns
         for c in htree_df.columns:
             setattr(self, c, htree_df[c].values)
-        return
+
     
     def obj2df(self):
         '''Convert HTree object to a pandas dataframe'''
@@ -91,7 +91,6 @@ class HTree():
         '''Convert a valid pandas dataframe to a HTree object'''
         for key in htree_df.columns:
             setattr(self, key, htree_df[key].values)
-        return
 
     def plot(self,figsize=(15,10),fontsize=10,skeletononly=True,
              skeletoncol='#BBBBBB',skeletonalpha=1.0,ls='-',txtleafonly=True,

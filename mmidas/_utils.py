@@ -1,3 +1,4 @@
+import copy
 import os
 import random
 import time
@@ -5,7 +6,7 @@ import warnings
 import math
 from collections import defaultdict
 from functools import reduce, wraps
-from itertools import product, starmap
+from itertools import product, starmap, tee
 from typing import List
 
 import numpy as np
@@ -15,6 +16,7 @@ from torch import nn
 from torch._dynamo import OptimizedModule
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.nn.parallel import DistributedDataParallel as DDP
+from toolz.curried import *
 
 from mmidas._evals import evals2
 from mmidas.utils.dataloader import get_loaders, load_data
@@ -38,13 +40,26 @@ def convert(x, from_, to_):
     return converter.convert(x, from_, to_)
 
 
-def sample(xs, n):
-    def go(n, acc):
-        if n == 0:
-            return acc
-        else:
-            return go(n - 1, acc + [random.choice(xs)])
-    return go(n, [])
+# returns infinite random stream
+def randomize(xs):
+    xs = list(xs)
+    def go():
+        yield random.choice(xs)
+        yield from go()
+    yield from go()
+
+
+def shuffle(xs):
+    def go(xs):
+        for x in xs:
+            yield x
+    xs = list(xs)
+    random.shuffle(xs)
+    return go(xs)
+
+
+def npercent(p, xs):
+    return int(p * count(xs))
 
 
 def unzip(xs):
