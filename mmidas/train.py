@@ -30,12 +30,12 @@ def generic_train(model, opt, train_data, val_data, epochs, loss_fn, device, f):
 
             opt.zero_grad()
             y_hat = f(model)(x)
-            loss = loss_fn(y_hat, y)
+            loss = loss_fn(y_hat, [x for _ in range(model.n_arm)])[0]
             loss.backward()
             opt.step()
 
             metrics['train_loss'] = loss.item()
-            metrics['train_acc'] = th.argmax(y_hat, dim=-1).float().mean().item()
+            # metrics['train_acc'] = th.argmax(y_hat, dim=-1).float().mean().item()
             metrics['total_loss'] += loss.item()
             metrics['n_samples'] += len(x)
 
