@@ -1,3 +1,38 @@
+Metadata-Version: 2.4
+Name: distributed-vae
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: anndata>=0.10.9
+Requires-Dist: expecttest>=0.2.1
+Requires-Dist: ipykernel>=6.29.5
+Requires-Dist: notebook>=7.1.3
+Requires-Dist: plotly>=5.24.1
+Requires-Dist: pytest>=8.3.3
+Requires-Dist: requests==2.28.1
+Requires-Dist: scikit-learn>=1.5.2
+Requires-Dist: scipy>=1.14.1
+Requires-Dist: seaborn>=0.13.2
+Requires-Dist: toml>=0.10.2
+Requires-Dist: tqdm==4.64.1
+Requires-Dist: torch>=2.5.1
+Requires-Dist: torchvision>=0.20.1
+Requires-Dist: hypothesis>=6.122.6
+Requires-Dist: flatten-json>=0.1.14
+Requires-Dist: toolz>=1.0.0
+Requires-Dist: hy>=1.0.0
+Requires-Dist: basilisp>=0.3.7
+Requires-Dist: mlx>=0.24.0
+Requires-Dist: numpy>=2.2.3
+Requires-Dist: pandas>=2.2.3
+Requires-Dist: datasets>=2.19.1
+Requires-Dist: diffusers>=0.32.2
+Requires-Dist: jax>=0.5.3
+Requires-Dist: plotext>=5.3.2
+Dynamic: license-file
+
 # distributed-vae
 Distributed training of multi-arm variational autoencoding networks. This repository contains 
 - experiment code for training multi-arm variational autoencoding networks with the fully-sharded data parallelism (FSDP) strategy in PyTorch

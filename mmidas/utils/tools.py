@@ -16,67 +16,8 @@ DATA_PATH = "data"
 PATHS = "paths"
 MILLION = 1e6
 
-
-def join2(x, y) -> str:
-    if y.startswith("/"):
-        return y
-    elif x.endswith("/"):
-        return x + y
-    else:
-        return x + "/" + y
-
-
-join_data = partial(join2, DATA_PATH)
-
-
-def index_of(xs, t):
-    if isinstance(xs, np.ndarray):
-        return np.where(xs == t)[0][0]
-    else:
-        for i, x in enumerate(xs):
-            if x == t:
-                return i
-        return -1
-
-
-def indices_of(xs, ts):
-    return [index_of(xs, t) for t in ts]
-
-
-def join_path(xs) -> str:
-    def go(xs, acc) -> str:
-        match xs:
-            case []:
-                return acc
-            case [x, *xs]:
-                return go(xs, join2(acc, x))
-
-    match xs:
-        case []:
-            raise ValueError("Must provide at least one path")
-        case [x, *xs]:
-            y = go(xs, x)
-            assert y == os.path.join(*[x, *xs]), (y, os.path.join(*[x, *xs]))
-            return y
-
-
-# TODO: how to implement stat?
-def path_exists(path):
-    try:
-        os.stat(path)
-    except:
-        return False
-    v = True
-    assert v == os.path.exists(path), (v, os.path.exists(path), path)
-    return v
-
-
-# TODO
-def load_toml():
-    raise NotImplementedError
-
-
-def get_paths(path: str, dataset: str) -> dict[str, str]:
+@lru_cache(maxsize=None)
+def get_paths(toml_file, sub_file='files', verbose=False):
     """Loads dictionary with path names and any other variables set through xxx.toml
 
     Args:
@@ -85,15 +26,35 @@ def get_paths(path: str, dataset: str) -> dict[str, str]:
     Returns:
         config: dict
     """
-    with open(path) as f:
-        config = toml.load(f)
 
-    config["paths"]["main_dir"] = ROOT
+    # package_dir = Path().resolve().parents[1]
+    package_dir = Path().resolve()
+    config_file = package_dir / toml_file
+    print(config_file)
 
-    # for k in [PATHS, dataset]:
-    #     for l in config[k]:
-    #         if path_exists(config[k][l]):
-    #             config[k][l] = Path(config[k][l])
+    if not Path(config_file).is_file():
+        print(f'Did not find project`s toml file: {config_file}')
+
+    f = open(config_file, "r")
+    config = toml.load(f)
+    f.close()
+
+    config['paths'].update({'main_dir': package_dir})
+
+    if verbose:
+        for key in config.keys():
+            print(f'{key}: {config[key]}')
+
+    for key in config:
+        if key=='paths':
+            for key2 in config['paths']:
+                if Path(config['paths'][key2]).exists():
+                    config['paths'][key2] = Path(config['paths'][key2])
+        if key==sub_file:
+            print(f'Getting files directories belong to {sub_file}...')
+            for key2 in config[sub_file]:
+                if Path(config[sub_file][key2]).exists():
+                    config[sub_file][key2] = Path(config[sub_file][key2])
 
     return config
 

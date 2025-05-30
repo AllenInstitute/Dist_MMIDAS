@@ -16,7 +16,7 @@ def load_data(
 ):
     adata = anndata.read_h5ad(path)
 
-    print("adata:\n", adata)
+    # print("adata:\n", adata)
 
     data = dict()
     data["log1p"] = adata.X
@@ -63,13 +63,18 @@ def load_data(
     data["c_p"] = softmax((data["c_onehot"] + eps) / tau, axis=1)
     data["n_type"] = len(np.unique(data["cluster_label"]))
 
-    print(" --------- Data Summary --------- ")
-    print(
-        f'# cell types: {len(np.unique(data["cluster_label"]))} | # cells: {data["log1p"].shape[0]} | # genes: {len(data["gene_id"])}'
-    )
+    # print(show_summary(data))
 
     return data
 
+def show_summary(data):
+    n_cell_types = len(np.unique(data["cluster_label"]))
+    n_cells      = data["log1p"].shape[0]
+    n_genes      = len(data["gene_id"])
+    return "\n".join(["Summary",
+                      "n_cell_types" + ": " + str(n_cell_types),
+                      "n_cells"      + ": " + str(n_cells),
+                      "n_genes"      + ": " + str(n_genes)])
 
 def data_gen(dataset, train_size, seed):
     test_size = dataset.shape[0] - train_size
@@ -84,88 +89,40 @@ def data_gen(dataset, train_size, seed):
     return train_cpm, test_cpm, train_ind, test_ind
 
 
-def get_loaders(
-    dataset,
-    label=[],
-    seed=None,
-    batch_size=128,
-    train_size=0.9,
-    use_dist_sampler=False,
-    world_size=1,
-    rank=0,
-):
-    assert len(label) == 0
-    tt_size = int(train_size * dataset.shape[0])
-    train_set, test_set, train_ind, test_ind = data_gen(dataset, tt_size, seed)
+def get_loaders(dataset, label=[], seed=None, batch_size=128, train_size=0.9):
 
-    # if len(label) > 0:
-    #     train_ind, val_ind, test_ind = [], [], []
-    #     for ll in np.unique(label):
-    #         indx = np.where(label == ll)[0]
-    #         tt_size = int(train_size * sum(label == ll))
-    #         _, _, train_subind, test_subind = data_gen(dataset, tt_size, seed)
-    #         train_ind.append(indx[train_subind])
-    #         test_ind.append(indx[test_subind])
+        batch_size = batch_size
 
-    #     train_ind = np.concatenate(train_ind)
-    #     test_ind = np.concatenate(test_ind)
-    #     train_set = dataset[train_ind, :]
-    #     test_set = dataset[test_ind, :]
+        if len(label) > 0:
+            train_ind, val_ind, test_ind = [], [], []
+            for ll in np.unique(label):
+                indx = np.where(label == ll)[0]
+                tt_size = int(train_size * sum(label == ll))
+                _, _, train_subind, test_subind = data_gen(dataset, tt_size, seed)
+                train_ind.append(indx[train_subind])
+                test_ind.append(indx[test_subind])
 
+            train_ind = np.concatenate(train_ind)
+            test_ind = np.concatenate(test_ind)
+            train_set = dataset[train_ind, :]
+            test_set = dataset[test_ind, :]
+        else:
+            tt_size = int(train_size * dataset.shape[0])
+            train_set, test_set, train_ind, test_ind = data_gen(dataset, tt_size, seed)
 
-    train_data = TensorDataset(
-        th.tensor(train_set, dtype=th.float32), th.tensor(train_ind, dtype=th.float32)
-    )
+        train_set_torch = torch.FloatTensor(train_set)
+        train_ind_torch = torch.FloatTensor(train_ind)
+        train_data = TensorDataset(train_set_torch, train_ind_torch)
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, drop_last=True, pin_memory=True)
 
-    if world_size > 1 and use_dist_sampler:
-        train_sampler = DistributedSampler(
-            train_data, rank=rank, num_replicas=world_size, shuffle=True
-        )
-    else:
-        train_sampler = None
-    train_loader = DataLoader(
-        train_data,
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=True,
-        pin_memory=True,
-        persistent_workers=True,
-        num_workers=2,
-        sampler=train_sampler,
-    )
+        test_set_torch = torch.FloatTensor(test_set)
+        test_ind_torch = torch.FloatTensor(test_ind)
+        test_data = TensorDataset(test_set_torch, test_ind_torch)
+        test_loader = DataLoader(test_data, batch_size=1, shuffle=True, drop_last=False, pin_memory=True)
 
-    test_data = TensorDataset(
-        th.tensor(test_set, dtype=th.float32), th.tensor(test_ind, dtype=th.float32)
-    )
-    if world_size > 1 and use_dist_sampler:
-        test_sampler = DistributedSampler(
-            test_data, rank=rank, num_replicas=world_size, shuffle=True
-        )
-    else:
-        test_sampler = None
-    test_loader = DataLoader(
-        test_data,
-        batch_size=1,
-        shuffle=False,
-        drop_last=False,
-        pin_memory=True,
-        persistent_workers=True,
-        num_workers=2,
-        sampler=test_sampler,
-    )
-    # test_loader = DataLoader(test_data, batch_size=1, shuffle=True, drop_last=False, pin_memory=True, num_workers=8, persistent_workers=True, prefetch_factor=4)
+        data_set_troch = torch.FloatTensor(dataset)
+        all_ind_torch = torch.FloatTensor(range(dataset.shape[0]))
+        all_data = TensorDataset(data_set_troch, all_ind_torch)
+        alldata_loader = DataLoader(all_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
 
-    data_set_troch = th.tensor(dataset, dtype=th.float32)
-    all_ind_torch = th.tensor(range(dataset.shape[0]), dtype=th.float32)
-    all_data = TensorDataset(data_set_troch, all_ind_torch)
-    alldata_loader = DataLoader(
-        all_data,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,
-        pin_memory=True,
-        persistent_workers=True,
-        num_workers=2,
-    )
-
-    return train_loader, test_loader, alldata_loader
+        return train_loader, test_loader, alldata_loader
