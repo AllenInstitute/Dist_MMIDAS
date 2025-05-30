@@ -164,6 +164,8 @@ class cpl_mixVAE:
         fc_sigma = torch.ones((self.state_dim, self.n_categories + self.lowD_dim))
         f6_mask = torch.ones((self.lowD_dim, self.state_dim + self.n_categories))
 
+        step = 0
+
         bias_mask = bias_mask.to(self.device)
         weight_mask = weight_mask.to(self.device)
         fc_mu = fc_mu.to(self.device)
@@ -172,7 +174,6 @@ class cpl_mixVAE:
         batch_size = train_loader.batch_size
         if self.init:
             print("1 epoch = %s batches" % (len(train_loader)))
-            print("training...")
             tic = time.time()
             for epoch in range(n_epoch):
                 train_loss_val = 0
@@ -188,6 +189,7 @@ class cpl_mixVAE:
                 self.model.train()
 
                 for batch_indx, (data, d_idx), in enumerate(train_loader):
+                    tic = time.time()
                     data = Variable(data).to(self.device)
                     d_idx = d_idx.to(int)
                         
@@ -228,6 +230,11 @@ class cpl_mixVAE:
                     var_min += min_var_0.data.item()
                     n_samples += len(data)
 
+                    step += 1
+                    n_samples = len(data)
+                    dt = (time.time() - tic)
+                    print(f"step: {step} | loss: {loss.item():.2f} | loss-rec-0: {loss_rec[0].item():.2f} | loss-rec-1: {loss_rec[1].item():.2f} | throughout: {n_samples/dt:.2f}it/s | dt: {dt*1000:.2f}ms")
+
                     for arm in range(self.n_arm):
                         train_loss_rec[arm] += loss_rec[arm].data.item() / self.input_dim
 
@@ -244,12 +251,13 @@ class cpl_mixVAE:
                         train_loss_KL[arm, cc, epoch] = train_KLD_cont[arm, cc] / (batch_indx + 1)
 
                 dt = (time.time() - t0)
-                print('epoch: {} | train/total-loss: {:.4f} | train/rec-arm-1: {'':.4f} | train/rec-arm-2: {'':.4f} | train/joint-loss: {:.4f} | '
-                      'train/entropy: {:.4f} | train/distance: {:.4f} | train/throughput: {:.2f}it/s | train/dt: {:.2f}ms'.format(
-                    epoch, train_loss[epoch], train_recon[0, epoch], train_recon[1, epoch], train_loss_joint[epoch],
-                    train_entropy[epoch], train_distance[epoch], n_samples / dt, dt * 1000))
+                # print('epoch: {} | train/total-loss: {:.4f} | train/rec-arm-1: {'':.4f} | train/rec-arm-2: {'':.4f} | train/joint-loss: {:.4f} | '
+                #       'train/entropy: {:.4f} | train/distance: {:.4f} | train/throughput: {:.2f}it/s | train/dt: {:.2f}ms'.format(
+                #     epoch, train_loss[epoch], train_recon[0, epoch], train_recon[1, epoch], train_loss_joint[epoch],
+                #     train_entropy[epoch], train_distance[epoch], n_samples / dt, dt * 1000))
 
                 # validation
+                continue
                 self.model.eval()
                 with torch.no_grad():
                     val_loss_rec = 0.
@@ -307,7 +315,7 @@ class cpl_mixVAE:
                 validation_rec_loss[epoch] = val_loss_rec / (batch_indx + 1) / self.n_arm
                 validation_loss[epoch] = val_loss / (batch_indx + 1)
                 dt = (time.time() - tic)
-                print('val/total-loss: {:.4f} | val/rec-loss: {:.4f} | val/throughput: {:.2f}it/s | val/dt: {:.2f}ms'.format(validation_loss[epoch], validation_rec_loss[epoch], n_samples / dt, dt * 1000))
+                # print('val/total-loss: {:.4f} | val/rec-loss: {:.4f} | val/throughput: {:.2f}it/s | val/dt: {:.2f}ms'.format(validation_loss[epoch], validation_rec_loss[epoch], n_samples / dt, dt * 1000))
 
                 if self.save and (epoch > 0) and (epoch % 1000 == 0):
                     trained_model = self.folder + f'/model/cpl_mixVAE_model_epoch_{epoch}.pth'
@@ -426,12 +434,12 @@ class cpl_mixVAE:
                 f6_mask[:, ind] = 0.
                 stop_prune = False
             else:
-                print('No more pruning!')
+                print('pruning done')
                 stop_prune = True
 
             if not stop_prune:
-                print("Continue training with pruning ...")
-                print(f"Pruned categories: {ind}")
+                print("continuing pruning...")
+                print(f"pruned classes: {ind}")
                 bias = bias_mask.detach().cpu().numpy()
                 pruning_mask = np.where(bias != 0.)[0]
                 train_loss = np.zeros(n_epoch_p)
@@ -531,10 +539,10 @@ class cpl_mixVAE:
                             train_loss_KL[arm, c, epoch] = train_KLD_cont[arm, c] / (batch_indx + 1)
 
                     dt = (time.time() - t0)
-                    print('epoch: {} | prune/total-loss: {:.4f} | prune/rec-arm-1: {'
-                          ':.4f} | prune/rec-arm-2: {:.4f} | prune/joint-loss: {:.4f} | prune/entropy: {:.4f} | prune/distance: {:.4f} | prune/throughput: {:2f}it/s | prune/dt: {:.2f}ms'.format(
-                        epoch, train_loss[epoch], train_recon[0, epoch], train_recon[1, epoch], train_loss_joint[epoch],
-                        train_entropy[epoch], train_distance[epoch], n_samples / dt, dt * 1000))
+                    # print('epoch: {} | prune/total-loss: {:.4f} | prune/rec-arm-1: {'
+                    #       ':.4f} | prune/rec-arm-2: {:.4f} | prune/joint-loss: {:.4f} | prune/entropy: {:.4f} | prune/distance: {:.4f} | prune/throughput: {:2f}it/s | prune/dt: {:.2f}ms'.format(
+                    #     epoch, train_loss[epoch], train_recon[0, epoch], train_recon[1, epoch], train_loss_joint[epoch],
+                    #     train_entropy[epoch], train_distance[epoch], n_samples / dt, dt * 1000))
 
                     # validation
                     self.model.eval()
@@ -596,7 +604,7 @@ class cpl_mixVAE:
                     validation_rec_loss[epoch] = val_loss_rec / (batch_indx + 1) / self.n_arm
                     total_val_loss[epoch] = val_loss / (batch_indx + 1)
                     dt = (time.time() - tic)
-                    print('val/total-loss: {:.4} | val/rec-loss: {:.4f} | val/throughput: {:.2f}it/s | val/dt: {:.2f}ms'.format(total_val_loss[epoch], validation_rec_loss[epoch], n_samples / dt, dt * 1000))
+                    # print('val/total-loss: {:.4} | val/rec-loss: {:.4f} | val/throughput: {:.2f}it/s | val/dt: {:.2f}ms'.format(total_val_loss[epoch], validation_rec_loss[epoch], n_samples / dt, dt * 1000))
 
                 for arm in range(self.n_arm):
                     prune.remove(self.model.fcc[arm], 'weight')
@@ -622,8 +630,6 @@ class cpl_mixVAE:
                     self.n_categories) + '_' + self.current_time + '.png')
                 plt.close("all")
                 pr += 1
-        
-        print('Training is done!')
     
         return trained_model
 
