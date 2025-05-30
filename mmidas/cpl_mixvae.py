@@ -233,7 +233,7 @@ class cpl_mixVAE:
                     step += 1
                     n_samples = len(data)
                     dt = (time.time() - tic)
-                    print(f"step: {step} | loss: {loss.item():.2f} | loss-rec-0: {loss_rec[0].item():.2f} | loss-rec-1: {loss_rec[1].item():.2f} | throughout: {n_samples/dt:.2f}it/s | dt: {dt*1000:.2f}ms")
+                    print(f"step: {step} | loss: {loss.item():.2f} | loss-rec-0: {loss_rec[0].item():.2f} | loss-rec-1: {loss_rec[1].item():.2f} | loss-joint: {loss_joint:.2f} | throughout: {n_samples/dt:.2f}it/s | dt: {dt*1000:.2f}ms")
 
                     for arm in range(self.n_arm):
                         train_loss_rec[arm] += loss_rec[arm].data.item() / self.input_dim
