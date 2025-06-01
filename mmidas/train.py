@@ -1,8 +1,10 @@
 import time
+import wandb
 import numpy as np
 
 # TODO: feat: add augmenter
 # TODO: feat: add reference prior
+# TODO: feat: automatic logging of multiple rec losses
 def train_mmidas(model, solver, train_loader, test_loader, spec):
     print("using device:", spec['device'])
     print(f"1 epoch = {len(train_loader)} batches")
@@ -41,16 +43,26 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
         dt = time.time() - tic
         return {
             'loss': loss.item(),
-            'loss_rec': [loss_rec[0].item(), loss_rec[1].item()],
+            # 'loss_rec': [loss_rec[0].item(), loss_rec[1].item()],
+            'loss_rec_0': loss_rec[0].item(),
+            'loss_rec_1': loss_rec[1].item(),
             'loss_joint': loss_joint.item(),
             'throughput': n_samples / dt, # it/s
             'dt': dt * 1000.0  # ms
         }
     t0 = time.time()
     step = 0
-    model.train()
-    for ep in range(n_epochs):
-        for i_batch, (xs, i_xs) in enumerate(train_loader):
-            step += 1
-            print(f"step: {step} | " + " | ".join(f"{k}: " + (f"{v:.2f}" if isinstance(v, float) else f"[{', '.join(f'{x:.2f}' for x in v)}]") for k, v in train_step(model, solver, xs).items()))
-    print(f"training time: {time.time() - t0:.2f}s")
+    with wandb.init(entity='', project='switchvae') as run:
+        model.train()
+        for ep in range(n_epochs):
+            for i_batch, (xs, i_xs) in enumerate(train_loader):
+                losses = train_step(model, solver, xs)
+                step += 1
+                run.log({
+                    'step': step,
+                    'epoch': ep,
+                    'batch': i_batch,
+                    **losses
+                })
+                print(f"step: {step} | " + " | ".join(f"{k}: " + (f"{v:.2f}" if isinstance(v, float) else f"[{', '.join(f'{x:.2f}' for x in v)}]") for k, v in losses.items()))
+        print(f"training time: {time.time() - t0:.2f}s")
