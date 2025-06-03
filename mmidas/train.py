@@ -64,7 +64,6 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
                     'batch': i_batch,
                     **losses
                 })
-                if step % print_every == 0:
+                if (step % print_every) == 0:
                     print(f"step: {step} | " + " | ".join(f"{k}: " + f"{v:.2f}" for k, v in losses.items()))
-                print(f"step: {step} | " + " | ".join(f"{k}: " + f"{v:.2f}" for k, v in losses.items()))
         print(f"training time: {time.time() - t0:.2f}s")
