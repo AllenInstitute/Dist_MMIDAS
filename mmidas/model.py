@@ -11,6 +11,9 @@ ModelSpec = dict[str, Any]
 def module_params(model: nn.Module) -> Params:
     return model.state_dict()
 
+def module_n_params(model: nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 def params_is_equal(ps1: Params, ps2: Params) -> bool:
     return set(ps1.keys()) == set(ps2.keys()) and all(th.equal(ps1[k], ps2[k]) for k in ps1)
 
