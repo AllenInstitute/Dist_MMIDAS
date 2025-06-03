@@ -1,6 +1,20 @@
+from typing import Any
+
+import torch as th
+from torch import nn
+
 from nn_model import mixVAE_model
 
-def make_mmidas(spec):
+Params = dict[str, th.Tensor]
+ModelSpec = dict[str, Any]
+
+def module_params(model: nn.Module) -> Params:
+    return model.state_dict()
+
+def params_is_equal(ps1: Params, ps2: Params) -> bool:
+    return set(ps1.keys()) == set(ps2.keys()) and all(th.equal(ps1[k], ps2[k]) for k in ps1)
+
+def make_mmidas(spec: ModelSpec) -> nn.Module:
     return mixVAE_model(
         input_dim=spec['input_dim'],
         fc_dim=spec['fc_dim'],
