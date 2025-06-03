@@ -16,6 +16,7 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
     temp = spec['temp']
     c_p = spec['c_prior']
     c_onehot = spec['c_onehot']
+    print_every = spec['print_every']
     device = spec['device']
 
     def train_step(model, solver, xs):
@@ -43,7 +44,6 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
         dt = time.time() - tic
         return {
             'loss': loss.item(),
-            # 'loss_rec': [loss_rec[0].item(), loss_rec[1].item()],
             'loss_rec_0': loss_rec[0].item(),
             'loss_rec_1': loss_rec[1].item(),
             'loss_joint': loss_joint.item(),
@@ -52,7 +52,7 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
         }
     t0 = time.time()
     step = 0
-    with wandb.init(entity='', project='switchvae') as run:
+    with wandb.init(entity='', project='switchvae', config=spec) as run:
         model.train()
         for ep in range(n_epochs):
             for i_batch, (xs, i_xs) in enumerate(train_loader):
@@ -64,5 +64,7 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
                     'batch': i_batch,
                     **losses
                 })
-                print(f"step: {step} | " + " | ".join(f"{k}: " + (f"{v:.2f}" if isinstance(v, float) else f"[{', '.join(f'{x:.2f}' for x in v)}]") for k, v in losses.items()))
+                if step % print_every == 0:
+                    print(f"step: {step} | " + " | ".join(f"{k}: " + f"{v:.2f}" for k, v in losses.items()))
+                print(f"step: {step} | " + " | ".join(f"{k}: " + f"{v:.2f}" for k, v in losses.items()))
         print(f"training time: {time.time() - t0:.2f}s")
