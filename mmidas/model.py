@@ -17,100 +17,46 @@ class MMIDAS(nn.Module):
     def __init__(self, spec):
         super(MMIDAS, self).__init__()
 
-        input_dim = mspec_lookup(spec, "input_dim")
-        fc_dim = mspec_lookup(spec, "fc_dim")
-        lowD_dim = mspec_lookup(spec, "lowD_dim")
-        state_dim = mspec_lookup(spec, "state_dim")
-        n_arms = mspec_lookup(spec, "n_arms")
-        n_categories = mspec_lookup(spec, "n_categories")
+        self.spec = spec
+
+        D = mspec_lookup(spec, "input_dim")
+        H = mspec_lookup(spec, "fc_dim")
+        L = mspec_lookup(spec, "lowD_dim")
+        Z = mspec_lookup(spec, "state_dim")
+        A = mspec_lookup(spec, "n_arms")
+        K = mspec_lookup(spec, "n_categories")
         eps = mspec_lookup(spec, "eps")
         momentum = mspec_lookup(spec, "momentum")
         x_drop = mspec_lookup(spec, "x_drop")
         s_drop = mspec_lookup(spec, "s_drop")
         loss_fn = mspec_lookup(spec, "loss_fn")
 
-        self.spec = spec
         self.x_dp = nn.Dropout(x_drop)
         self.s_dp = nn.Dropout(s_drop)
 
-        self.relu = nn.ReLU()
-        self.lrelu = nn.LeakyReLU(0.1, inplace=True)
-        self.elu = nn.ELU()
-        self.sigmoid = nn.Sigmoid()
-        self.tanh = nn.Tanh()
-
-        self.fc1 = mdl([nn.Linear(input_dim, fc_dim) for i in range(n_arms)])
-        self.fc2 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
-        self.fc3 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
-        self.fc4 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
-        self.fc5 = mdl([nn.Linear(fc_dim, lowD_dim) for i in range(n_arms)])
-        self.fcc = mdl([nn.Linear(lowD_dim, n_categories) for i in range(n_arms)])
-        self.fc_mu = mdl(
-            [nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)]
-        )
-        self.fc_sigma = mdl(
-            [nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)]
-        )
-        self.fc6 = mdl(
-            [nn.Linear(state_dim + n_categories, lowD_dim) for i in range(n_arms)]
-        )
-        self.fc7 = mdl([nn.Linear(lowD_dim, fc_dim) for i in range(n_arms)])
-        self.fc8 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
-        self.fc9 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
-        self.fc10 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
-        self.fc11 = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
+        self.fc1 = mdl([nn.Linear(D, H) for _ in range(A)])
+        self.fc2 = mdl([nn.Linear(H, H) for _ in range(A)])
+        self.fc3 = mdl([nn.Linear(H, H) for _ in range(A)])
+        self.fc4 = mdl([nn.Linear(H, H) for _ in range(A)])
+        self.fc5 = mdl([nn.Linear(H, L) for _ in range(A)])
+        self.fcc = mdl([nn.Linear(L, K) for _ in range(A)])
+        self.fc_mu = mdl([nn.Linear(L + K, Z) for _ in range(A)])
+        self.fc_sigma = mdl([nn.Linear(L + K, Z) for _ in range(A)])
+        self.fc6 = mdl([nn.Linear(Z + K, L) for _ in range(A)])
+        self.fc7 = mdl([nn.Linear(L, H) for _ in range(A)])
+        self.fc8 = mdl([nn.Linear(H, H) for _ in range(A)])
+        self.fc9 = mdl([nn.Linear(H, H) for _ in range(A)])
+        self.fc10 = mdl([nn.Linear(H, H) for _ in range(A)])
+        self.fc11 = mdl([nn.Linear(H, D) for _ in range(A)])
         if loss_fn == "ZINB":
-            self.fc11_p = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
-            self.fc11_r = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
+            self.fc11_p = mdl([nn.Linear(H, D) for _ in range(A)])
+            self.fc11_r = mdl([nn.Linear(H, D) for _ in range(A)])
 
-        self.batch_l1 = mdl(
-            [
-                nn.BatchNorm1d(
-                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
-                )
-                for i in range(n_arms)
-            ]
-        )
-        self.batch_l2 = mdl(
-            [
-                nn.BatchNorm1d(
-                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
-                )
-                for i in range(n_arms)
-            ]
-        )
-        self.batch_l3 = mdl(
-            [
-                nn.BatchNorm1d(
-                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
-                )
-                for i in range(n_arms)
-            ]
-        )
-        self.batch_l4 = mdl(
-            [
-                nn.BatchNorm1d(
-                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
-                )
-                for i in range(n_arms)
-            ]
-        )
-        self.batch_l5 = mdl(
-            [
-                nn.BatchNorm1d(
-                    num_features=lowD_dim, eps=eps, momentum=momentum, affine=False
-                )
-                for i in range(n_arms)
-            ]
-        )
-        self.batch_s = mdl(
-            [
-                nn.BatchNorm1d(
-                    num_features=state_dim, eps=eps, momentum=momentum, affine=False
-                )
-                for i in range(n_arms)
-            ]
-        )
+        self.norm1 = mdl([nn.BatchNorm1d(num_features=H, eps=eps, momentum=momentum, affine=False) for _ in range(A)]) 
+        self.norm2 = mdl([nn.BatchNorm1d(num_features=H, eps=eps, momentum=momentum, affine=False) for _ in range(A)])
+        self.norm3 = mdl([nn.BatchNorm1d(num_features=H, eps=eps, momentum=momentum, affine=False) for _ in range(A)])
+        self.norm4 = mdl([nn.BatchNorm1d(num_features=H, eps=eps, momentum=momentum, affine=False) for _ in range(A)])
+        self.norm5 = mdl([nn.BatchNorm1d(num_features=L, eps=eps, momentum=momentum, affine=False) for _ in range(A)])
 
         self.c_var_inv = [None] * 2
         self.stack_mean = [[] for a in range(2)]
@@ -119,41 +65,41 @@ class MMIDAS(nn.Module):
         self.c_var = [None] * 2
 
     def encoder(self, x, arm):
-        x = self.batch_l1[arm](self.relu(self.fc1[arm](self.x_dp(x))))
-        x = self.batch_l2[arm](self.relu(self.fc2[arm](x)))
-        x = self.batch_l3[arm](self.relu(self.fc3[arm](x)))
-        x = self.batch_l4[arm](self.relu(self.fc4[arm](x)))
-        z = self.batch_l5[arm](self.relu(self.fc5[arm](x)))
+        x = self.norm1[arm](F.relu(self.fc1[arm](self.x_dp(x))))
+        x = self.norm2[arm](F.relu(self.fc2[arm](x)))
+        x = self.norm3[arm](F.relu(self.fc3[arm](x)))
+        x = self.norm4[arm](F.relu(self.fc4[arm](x)))
+        z = self.norm5[arm](F.relu(self.fc5[arm](x)))
         return z, F.softmax(self.fcc[arm](z), dim=-1)
 
     def intermed(self, x, arm):
         if mspec_lookup(self.spec, "is_variational"):
-            return self.fc_mu[arm](x), self.sigmoid(self.fc_sigma[arm](x))
+            return self.fc_mu[arm](x), F.sigmoid(self.fc_sigma[arm](x))
         else:
             return self.fc_mu[arm](x)
 
     def decoder(self, c, s, arm):
         s = self.s_dp(s)
         z = th.cat((c, s), dim=1)
-        x = self.relu(self.fc6[arm](z))
-        x = self.relu(self.fc7[arm](x))
-        x = self.relu(self.fc8[arm](x))
-        x = self.relu(self.fc9[arm](x))
-        x = self.relu(self.fc10[arm](x))
-        return self.relu(self.fc11[arm](x))
+        x = F.relu(self.fc6[arm](z))
+        x = F.relu(self.fc7[arm](x))
+        x = F.relu(self.fc8[arm](x))
+        x = F.relu(self.fc9[arm](x))
+        x = F.relu(self.fc10[arm](x))
+        return F.relu(self.fc11[arm](x))
 
     def decoder_zinb(self, c, s, arm):
         s = self.s_dp(s)
         z = th.cat((c, s), dim=1)
-        x = self.relu(self.fc6[arm](z))
-        x = self.relu(self.fc7[arm](x))
-        x = self.relu(self.fc8[arm](x))
-        x = self.relu(self.fc9[arm](x))
-        x = self.relu(self.fc10[arm](x))
+        x = F.relu(self.fc6[arm](z))
+        x = F.relu(self.fc7[arm](x))
+        x = F.relu(self.fc8[arm](x))
+        x = F.relu(self.fc9[arm](x))
+        x = F.relu(self.fc10[arm](x))
         return (
-            self.relu(self.fc11[arm](x)),
-            self.sigmoid(self.fc11_p[arm](x)),
-            self.sigmoid(self.fc11_r[arm](x)),
+            F.relu(self.fc11[arm](x)),
+            F.sigmoid(self.fc11_p[arm](x)),
+            F.sigmoid(self.fc11_r[arm](x)),
         )
 
     def forward(self, x, temp, prior_c=[], eval=False, mask=None):
@@ -177,48 +123,44 @@ class MMIDAS(nn.Module):
         qc, alr_qc = [None] * n_arms, [None] * n_arms
         x_low, log_qc = [None] * n_arms, [None] * n_arms
 
-        for arm in range(n_arms):
-            x_low[arm], log_qc[arm] = self.encoder(x[arm], arm)
+        for a in range(n_arms):
+            x_low[a], log_qc[a] = self.encoder(x[a], a)
 
             if mask is not None:
-                qc_tmp = F.softmax(log_qc[arm][:, mask] / tau, dim=-1)
-                qc[arm] = th.zeros((log_qc[arm].size(0), log_qc[arm].size(1))).to(
-                    device
-                )
+                qc_tmp = F.softmax(log_qc[a][:, mask] / tau, dim=-1)
+                qc[a] = th.zeros((log_qc[a].size(0), log_qc[a].size(1))).to(device)
 
-                qc[arm][:, mask] = qc_tmp
+                qc[a][:, mask] = qc_tmp
             else:
-                qc[arm] = F.softmax(log_qc[arm] / tau, dim=-1)
+                qc[a] = F.softmax(log_qc[a] / tau, dim=-1)
 
-            q_ = qc[arm].view(log_qc[arm].size(0), 1, n_categories)
+            q_ = qc[a].view(len(log_qc[a]), 1, n_categories)
 
             if eval:
-                c[arm] = self.gumbel_softmax(
+                c[a] = self.gumbel_softmax(
                     q_, 1, n_categories, temp, hard=True, gumble_noise=False
                 )
             else:
-                c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=is_hard)
+                c[a] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=is_hard)
 
             if is_ref_prior:
-                y = th.cat((x_low[arm], prior_c), dim=1)
+                y = th.cat((x_low[a], prior_c), dim=1)
             else:
-                y = th.cat((x_low[arm], c[arm]), dim=1)
+                y = th.cat((x_low[a], c[a]), dim=1)
 
             if is_variational:
-                mu[arm], var = self.intermed(y, arm)
-                log_var[arm] = (var + eps).log()
-                s[arm] = self.reparam_trick(mu[arm], log_var[arm])
+                mu[a], var = self.intermed(y, a)
+                log_var[a] = (var + eps).log()
+                s[a] = self.reparam_trick(mu[a], log_var[a])
             else:
-                mu[arm] = self.intermed(y, arm)
-                log_var[arm] = 0.0 * mu[arm]
-                s[arm] = self.intermed(y, arm)
+                mu[a] = self.intermed(y, a)
+                log_var[a] = 0.0 * mu[a]
+                s[a] = self.intermed(y, a)
 
             if loss_fn == "ZINB":
-                recon_x[arm], zinb_pi[arm], zinb_r[arm] = self.decoder_zinb(
-                    c[arm], s[arm], arm
-                )
+                recon_x[a], zinb_pi[a], zinb_r[a] = self.decoder_zinb(c[a], s[a], a)
             else:
-                recon_x[arm] = self.decoder(c[arm], s[arm], arm)
+                recon_x[a] = self.decoder(c[a], s[a], a)
 
         return recon_x, zinb_pi, zinb_r, x_low, qc, s, c, mu, log_var, log_qc
 
@@ -284,7 +226,7 @@ class MMIDAS(nn.Module):
         mu_in, var_in = [None] * n_arms, [None] * n_arms
         mu_tmp, var_tmp = [None] * n_arms, [None] * n_arms
         loglikelihood = [None] * n_arms
-        batch_size, n_cat = c[0].size()
+        norm_size, n_cat = c[0].size()
         neg_joint_entropy, z_distance_rep, z_distance, dist_a = [], [], [], []
 
         for arm_a in range(n_arms):
