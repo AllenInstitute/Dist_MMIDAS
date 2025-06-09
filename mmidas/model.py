@@ -12,21 +12,22 @@ from nn_model import mixVAE_model
 Params = dict[str, th.Tensor]
 MMIDASSpec = dict[str, Any]
 
+
 class MMIDAS(nn.Module):
     def __init__(self, spec):
         super(MMIDAS, self).__init__()
 
-        input_dim = mspec_lookup(spec, 'input_dim')
-        fc_dim = mspec_lookup(spec, 'fc_dim')
-        lowD_dim = mspec_lookup(spec, 'lowD_dim')
-        state_dim = mspec_lookup(spec, 'state_dim')
-        n_arms = mspec_lookup(spec, 'n_arms')
-        n_categories = mspec_lookup(spec, 'n_categories')
-        eps = mspec_lookup(spec, 'eps')
-        momentum = mspec_lookup(spec, 'momentum')
-        x_drop = mspec_lookup(spec, 'x_drop')
-        s_drop = mspec_lookup(spec, 's_drop')
-        loss_fn = mspec_lookup(spec, 'loss_fn')
+        input_dim = mspec_lookup(spec, "input_dim")
+        fc_dim = mspec_lookup(spec, "fc_dim")
+        lowD_dim = mspec_lookup(spec, "lowD_dim")
+        state_dim = mspec_lookup(spec, "state_dim")
+        n_arms = mspec_lookup(spec, "n_arms")
+        n_categories = mspec_lookup(spec, "n_categories")
+        eps = mspec_lookup(spec, "eps")
+        momentum = mspec_lookup(spec, "momentum")
+        x_drop = mspec_lookup(spec, "x_drop")
+        s_drop = mspec_lookup(spec, "s_drop")
+        loss_fn = mspec_lookup(spec, "loss_fn")
 
         self.spec = spec
         self.x_dp = nn.Dropout(x_drop)
@@ -44,25 +45,72 @@ class MMIDAS(nn.Module):
         self.fc4 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
         self.fc5 = mdl([nn.Linear(fc_dim, lowD_dim) for i in range(n_arms)])
         self.fcc = mdl([nn.Linear(lowD_dim, n_categories) for i in range(n_arms)])
-        self.fc_mu = mdl([nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)])
-        self.fc_sigma = mdl([nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)])
-        self.fc6 = mdl([nn.Linear(state_dim + n_categories, lowD_dim) for i in range(n_arms)])
+        self.fc_mu = mdl(
+            [nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)]
+        )
+        self.fc_sigma = mdl(
+            [nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)]
+        )
+        self.fc6 = mdl(
+            [nn.Linear(state_dim + n_categories, lowD_dim) for i in range(n_arms)]
+        )
         self.fc7 = mdl([nn.Linear(lowD_dim, fc_dim) for i in range(n_arms)])
         self.fc8 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
         self.fc9 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
         self.fc10 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
         self.fc11 = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
-        if loss_fn == 'ZINB':
+        if loss_fn == "ZINB":
             self.fc11_p = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
             self.fc11_r = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
 
-
-        self.batch_l1 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
-        self.batch_l2 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
-        self.batch_l3 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
-        self.batch_l4 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
-        self.batch_l5 = mdl([nn.BatchNorm1d(num_features=lowD_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
-        self.batch_s = mdl([nn.BatchNorm1d(num_features=state_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
+        self.batch_l1 = mdl(
+            [
+                nn.BatchNorm1d(
+                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
+                )
+                for i in range(n_arms)
+            ]
+        )
+        self.batch_l2 = mdl(
+            [
+                nn.BatchNorm1d(
+                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
+                )
+                for i in range(n_arms)
+            ]
+        )
+        self.batch_l3 = mdl(
+            [
+                nn.BatchNorm1d(
+                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
+                )
+                for i in range(n_arms)
+            ]
+        )
+        self.batch_l4 = mdl(
+            [
+                nn.BatchNorm1d(
+                    num_features=fc_dim, eps=eps, momentum=momentum, affine=False
+                )
+                for i in range(n_arms)
+            ]
+        )
+        self.batch_l5 = mdl(
+            [
+                nn.BatchNorm1d(
+                    num_features=lowD_dim, eps=eps, momentum=momentum, affine=False
+                )
+                for i in range(n_arms)
+            ]
+        )
+        self.batch_s = mdl(
+            [
+                nn.BatchNorm1d(
+                    num_features=state_dim, eps=eps, momentum=momentum, affine=False
+                )
+                for i in range(n_arms)
+            ]
+        )
 
         self.c_var_inv = [None] * 2
         self.stack_mean = [[] for a in range(2)]
@@ -79,7 +127,7 @@ class MMIDAS(nn.Module):
         return z, F.softmax(self.fcc[arm](z), dim=-1)
 
     def intermed(self, x, arm):
-        if mspec_lookup(self.spec, 'is_variational'):
+        if mspec_lookup(self.spec, "is_variational"):
             return self.fc_mu[arm](x), self.sigmoid(self.fc_sigma[arm](x))
         else:
             return self.fc_mu[arm](x)
@@ -93,7 +141,7 @@ class MMIDAS(nn.Module):
         x = self.relu(self.fc9[arm](x))
         x = self.relu(self.fc10[arm](x))
         return self.relu(self.fc11[arm](x))
-    
+
     def decoder_zinb(self, c, s, arm):
         s = self.s_dp(s)
         z = th.cat((c, s), dim=1)
@@ -102,19 +150,23 @@ class MMIDAS(nn.Module):
         x = self.relu(self.fc8[arm](x))
         x = self.relu(self.fc9[arm](x))
         x = self.relu(self.fc10[arm](x))
-        return self.relu(self.fc11[arm](x)), self.sigmoid(self.fc11_p[arm](x)), self.sigmoid(self.fc11_r[arm](x))
+        return (
+            self.relu(self.fc11[arm](x)),
+            self.sigmoid(self.fc11_p[arm](x)),
+            self.sigmoid(self.fc11_r[arm](x)),
+        )
 
     def forward(self, x, temp, prior_c=[], eval=False, mask=None):
-        n_arms = mspec_lookup(self.spec, 'n_arms')
-        n_categories = mspec_lookup(self.spec, 'n_categories')
-        eps = mspec_lookup(self.spec, 'eps')
-        tau = mspec_lookup(self.spec, 'tau')
-        loss_fn = mspec_lookup(self.spec, 'loss_fn')
-        is_hard = mspec_lookup(self.spec, 'is_hard')
-        is_ref_prior = mspec_lookup(self.spec, 'is_ref_prior')
-        is_variational = mspec_lookup(self.spec, 'is_variational')
+        n_arms = mspec_lookup(self.spec, "n_arms")
+        n_categories = mspec_lookup(self.spec, "n_categories")
+        eps = mspec_lookup(self.spec, "eps")
+        tau = mspec_lookup(self.spec, "tau")
+        loss_fn = mspec_lookup(self.spec, "loss_fn")
+        is_hard = mspec_lookup(self.spec, "is_hard")
+        is_ref_prior = mspec_lookup(self.spec, "is_ref_prior")
+        is_variational = mspec_lookup(self.spec, "is_variational")
 
-        device = mspec_lookup(self.spec, 'device')
+        device = mspec_lookup(self.spec, "device")
 
         recon_x = [None] * n_arms
         zinb_pi = [None] * n_arms
@@ -130,7 +182,9 @@ class MMIDAS(nn.Module):
 
             if mask is not None:
                 qc_tmp = F.softmax(log_qc[arm][:, mask] / tau, dim=-1)
-                qc[arm] = th.zeros((log_qc[arm].size(0), log_qc[arm].size(1))).to(device)
+                qc[arm] = th.zeros((log_qc[arm].size(0), log_qc[arm].size(1))).to(
+                    device
+                )
 
                 qc[arm][:, mask] = qc_tmp
             else:
@@ -139,7 +193,9 @@ class MMIDAS(nn.Module):
             q_ = qc[arm].view(log_qc[arm].size(0), 1, n_categories)
 
             if eval:
-                c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=True, gumble_noise=False)
+                c[arm] = self.gumbel_softmax(
+                    q_, 1, n_categories, temp, hard=True, gumble_noise=False
+                )
             else:
                 c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=is_hard)
 
@@ -154,39 +210,47 @@ class MMIDAS(nn.Module):
                 s[arm] = self.reparam_trick(mu[arm], log_var[arm])
             else:
                 mu[arm] = self.intermed(y, arm)
-                log_var[arm] = 0. * mu[arm]
+                log_var[arm] = 0.0 * mu[arm]
                 s[arm] = self.intermed(y, arm)
-            
-            if loss_fn == 'ZINB':
-                recon_x[arm], zinb_pi[arm], zinb_r[arm] = self.decoder_zinb(c[arm], s[arm], arm)
+
+            if loss_fn == "ZINB":
+                recon_x[arm], zinb_pi[arm], zinb_r[arm] = self.decoder_zinb(
+                    c[arm], s[arm], arm
+                )
             else:
                 recon_x[arm] = self.decoder(c[arm], s[arm], arm)
 
         return recon_x, zinb_pi, zinb_r, x_low, qc, s, c, mu, log_var, log_qc
 
     def reparam_trick(self, mu, log_sigma):
-        device = mspec_lookup(self.spec, 'device')
+        device = mspec_lookup(self.spec, "device")
 
         std = log_sigma.exp().sqrt()
         eps = th.rand_like(std).to(device)
         return eps.mul(std).add(mu)
 
     def sample_gumbel(self, shape):
-        device = mspec_lookup(self.spec, 'device')
+        device = mspec_lookup(self.spec, "device")
 
-        eps = mspec_lookup(self.spec, 'eps')
+        eps = mspec_lookup(self.spec, "eps")
         U = th.rand(shape).to(device)
 
         return -Variable(th.log(-th.log(U + eps) + eps))
 
-
     def gumbel_softmax_sample(self, phi, temperature):
-        eps = mspec_lookup(self.spec, 'eps')
+        eps = mspec_lookup(self.spec, "eps")
         logits = (phi + eps).log() + self.sample_gumbel(phi.size())
         return F.softmax(logits / temperature, dim=-1)
 
-
-    def gumbel_softmax(self, phi, latent_dim, categorical_dim, temperature, hard=False, gumble_noise=True):
+    def gumbel_softmax(
+        self,
+        phi,
+        latent_dim,
+        categorical_dim,
+        temperature,
+        hard=False,
+        gumble_noise=True,
+    ):
         if gumble_noise:
             y = self.gumbel_softmax_sample(phi, temperature)
         else:
@@ -204,15 +268,15 @@ class MMIDAS(nn.Module):
             return y_hard.view(-1, latent_dim * categorical_dim)
 
     def loss(self, recon_x, p_x, r_x, x, mu, log_sigma, qc, c, prior_c=[]):
-        n_arms = mspec_lookup(self.spec, 'n_arms')
-        n_categories = mspec_lookup(self.spec, 'n_categories')
-        beta = mspec_lookup(self.spec, 'beta')
-        eps = mspec_lookup(self.spec, 'eps')
-        lam = mspec_lookup(self.spec, 'lam')
-        lam_pc = mspec_lookup(self.spec, 'lam_pc')
-        loss_fn = mspec_lookup(self.spec, 'loss_fn')
-        is_ref_prior = mspec_lookup(self.spec, 'is_ref_prior')
-        is_variational = mspec_lookup(self.spec, 'is_variational')
+        n_arms = mspec_lookup(self.spec, "n_arms")
+        n_categories = mspec_lookup(self.spec, "n_categories")
+        beta = mspec_lookup(self.spec, "beta")
+        eps = mspec_lookup(self.spec, "eps")
+        lam = mspec_lookup(self.spec, "lam")
+        lam_pc = mspec_lookup(self.spec, "lam_pc")
+        loss_fn = mspec_lookup(self.spec, "loss_fn")
+        is_ref_prior = mspec_lookup(self.spec, "is_ref_prior")
+        is_variational = mspec_lookup(self.spec, "is_variational")
 
         loss_indep, KLD_cont = [None] * n_arms, [None] * n_arms
         log_qz, l_rec = [None] * n_arms, [None] * n_arms
@@ -224,23 +288,40 @@ class MMIDAS(nn.Module):
         neg_joint_entropy, z_distance_rep, z_distance, dist_a = [], [], [], []
 
         for arm_a in range(n_arms):
-            loglikelihood[arm_a] = F.mse_loss(recon_x[arm_a], x[arm_a], reduction='mean') + x[arm_a].size(0) * np.log(2 * np.pi)
-            if loss_fn == 'MSE':
-                l_rec[arm_a] = 0.5 * F.mse_loss(recon_x[arm_a], x[arm_a], reduction='sum') / (x[arm_a].size(0))
-                rec_bin = th.where(recon_x[arm_a] > 0.1, 1., 0.)
-                x_bin = th.where(x[arm_a] > 0.1, 1., 0.)
+            loglikelihood[arm_a] = F.mse_loss(
+                recon_x[arm_a], x[arm_a], reduction="mean"
+            ) + x[arm_a].size(0) * np.log(2 * np.pi)
+            if loss_fn == "MSE":
+                l_rec[arm_a] = (
+                    0.5
+                    * F.mse_loss(recon_x[arm_a], x[arm_a], reduction="sum")
+                    / (x[arm_a].size(0))
+                )
+                rec_bin = th.where(recon_x[arm_a] > 0.1, 1.0, 0.0)
+                x_bin = th.where(x[arm_a] > 0.1, 1.0, 0.0)
                 l_rec[arm_a] += 0.5 * F.binary_cross_entropy(rec_bin, x_bin)
-            elif loss_fn == 'ZINB':
-                l_rec[arm_a] = zinb_loss(recon_x[arm_a], p_x[arm_a], r_x[arm_a], x[arm_a])
+            elif loss_fn == "ZINB":
+                l_rec[arm_a] = zinb_loss(
+                    recon_x[arm_a], p_x[arm_a], r_x[arm_a], x[arm_a]
+                )
             else:
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
             if is_variational:
-                KLD_cont[arm_a] = (-0.5 * th.mean(1 + log_sigma[arm_a] - mu[arm_a].pow(2) - log_sigma[arm_a].exp(), dim=0)).sum()
+                KLD_cont[arm_a] = (
+                    -0.5
+                    * th.mean(
+                        1
+                        + log_sigma[arm_a]
+                        - mu[arm_a].pow(2)
+                        - log_sigma[arm_a].exp(),
+                        dim=0,
+                    )
+                ).sum()
                 loss_indep[arm_a] = l_rec[arm_a] + beta * KLD_cont[arm_a]
             else:
                 loss_indep[arm_a] = l_rec[arm_a]
-                KLD_cont[arm_a] = [0.]
+                KLD_cont[arm_a] = [0.0]
 
             log_qz[0] = th.log(qc[arm_a] + eps)
             var_qz0 = qc[arm_a].var(0)
@@ -249,137 +330,183 @@ class MMIDAS(nn.Module):
 
             for arm_b in range(arm_a + 1, n_arms):
                 log_qz[1] = th.log(qc[arm_b] + eps)
-                tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + \
-                              (th.sum(qc[arm_b] * log_qz[1], dim=-1)).mean()
+                tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + (
+                    th.sum(qc[arm_b] * log_qz[1], dim=-1)
+                ).mean()
                 neg_joint_entropy.append(tmp_entropy)
                 # var = qc[arm_b].var(0)
                 var_qz1 = qc[arm_b].var(0)
-                var_qz_inv[1] = (1 / (var_qz1 + eps)).repeat(qc[arm_b].size(0), 1).sqrt()
+                var_qz_inv[1] = (
+                    (1 / (var_qz1 + eps)).repeat(qc[arm_b].size(0), 1).sqrt()
+                )
 
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
-                z_distance_rep.append((th.norm((c[arm_a] - c[arm_b]), p=2, dim=1).pow(2)).mean())
-                z_distance.append((th.norm((log_qz[0] * var_qz_inv[0]) - (log_qz[1] * var_qz_inv[1]), p=2, dim=1).pow(2)).mean())
+                z_distance_rep.append(
+                    (th.norm((c[arm_a] - c[arm_b]), p=2, dim=1).pow(2)).mean()
+                )
+                z_distance.append(
+                    (
+                        th.norm(
+                            (log_qz[0] * var_qz_inv[0]) - (log_qz[1] * var_qz_inv[1]),
+                            p=2,
+                            dim=1,
+                        ).pow(2)
+                    ).mean()
+                )
 
             if is_ref_prior:
                 n_comb = max(n_arms * (n_arms + 1) / 2, 1)
                 scaler = n_arms
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
-                z_distance_rep.append((th.norm((c[arm_a] - prior_c), p=2, dim=1).pow(2)).mean())
+                z_distance_rep.append(
+                    (th.norm((c[arm_a] - prior_c), p=2, dim=1).pow(2)).mean()
+                )
                 tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
-                qc_bin = self.gumbel_softmax(qc[arm_a], 1, n_categories, 1, hard=True, gumble_noise=False)
+                qc_bin = self.gumbel_softmax(
+                    qc[arm_a], 1, n_categories, 1, hard=True, gumble_noise=False
+                )
                 z_distance.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
             else:
                 n_comb = max(n_arms * (n_arms - 1) / 2, 1)
                 scaler = max((n_arms - 1), 1)
 
-
-        loss_joint = lam * sum(z_distance) + sum(neg_joint_entropy) + n_comb * ((n_cat / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * lam))
+        loss_joint = (
+            lam * sum(z_distance)
+            + sum(neg_joint_entropy)
+            + n_comb * ((n_cat / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * lam))
+        )
 
         loss = scaler * sum(loss_indep) + loss_joint
 
-        return loss, l_rec, loss_joint, sum(neg_joint_entropy) / n_comb, sum(z_distance) / n_comb, sum(z_distance_rep) / n_comb, KLD_cont, var_qz0.min(), loglikelihood
+        return (
+            loss,
+            l_rec,
+            loss_joint,
+            sum(neg_joint_entropy) / n_comb,
+            sum(z_distance) / n_comb,
+            sum(z_distance_rep) / n_comb,
+            KLD_cont,
+            var_qz0.min(),
+            loglikelihood,
+        )
 
 
 def zinb_loss(rec_x, x_p, x_r, X, eps=1e-6):
     X_dim = X.size(-1)
-    k = X.exp() - 1. #logp(count) -->  (count)
+    k = X.exp() - 1.0  # logp(count) -->  (count)
 
     # extracting r,p, and z from the concatenated vactor.
     # eps added for stability.
-    r = rec_x + eps # zinb_params[:, :X_dim] + eps
-    p = (1 - eps)*(x_p + eps) # (1 - eps)*(zinb_params[:, X_dim:2*X_dim] + eps)
-    z = (1 - eps)*(x_r + eps) # (1 - eps)*(zinb_params[:, 2*X_dim:] + eps)
+    r = rec_x + eps  # zinb_params[:, :X_dim] + eps
+    p = (1 - eps) * (x_p + eps)  # (1 - eps)*(zinb_params[:, X_dim:2*X_dim] + eps)
+    z = (1 - eps) * (x_r + eps)  # (1 - eps)*(zinb_params[:, 2*X_dim:] + eps)
 
     mask_nonzeros = ([X > 0])[0].to(th.float32)
-    loss_zero_counts = (mask_nonzeros-1) * (z + (1-z) * (1-p).pow(r)).log()
+    loss_zero_counts = (mask_nonzeros - 1) * (z + (1 - z) * (1 - p).pow(r)).log()
     # log of zinb for non-negative terms, excluding x! term
-    loss_nonzero_counts = mask_nonzeros * (-(k + r).lgamma() + r.lgamma() - k*p.log() - r*(1-p).log() - (1-z).log())
+    loss_nonzero_counts = mask_nonzeros * (
+        -(k + r).lgamma() + r.lgamma() - k * p.log() - r * (1 - p).log() - (1 - z).log()
+    )
 
     l_zinb = (loss_zero_counts + loss_nonzero_counts).mean()
 
     return l_zinb
 
+
+# TODO: remove device
 def make_mspec(
-        input_dim: int = 5032,
-        fc_dim: int = 100,
-        lowD_dim: int = 10,
-        state_dim: int = 2,
-        n_categories: int = 120,
-        n_arms: int = 2,
-        temp: float = 1.0,
-        eps: float = 1e-8,
-        is_ref_prior: bool = False,
-        x_drop: float = 0.5,
-        s_drop: float = 0.2,
-        lam: float = 1.0,
-        lam_pc: float = 1.0,
-        tau: float = 0.005,
-        beta: float = 1.0,
-        is_hard: bool = False,
-        is_variational: bool = True,
-        c_prior: float = 0.0,
-        c_onehot: float = 0.0,
+    input_dim: int = 5032,
+    fc_dim: int = 100,
+    lowD_dim: int = 10,
+    state_dim: int = 2,
+    n_categories: int = 120,
+    n_arms: int = 2,
+    temp: float = 1.0,
+    eps: float = 1e-8,
+    is_ref_prior: bool = False,
+    x_drop: float = 0.5,
+    s_drop: float = 0.2,
+    lam: float = 1.0,
+    lam_pc: float = 1.0,
+    tau: float = 0.005,
+    beta: float = 1.0,
+    is_hard: bool = False,
+    is_variational: bool = True,
+    c_prior: float = 0.0,
+    c_onehot: float = 0.0,
+    device: str = "cpu",
 ):
     return {
-        'input_dim': input_dim,
-        'fc_dim': fc_dim,
-        'lowD_dim': lowD_dim,
-        'state_dim': state_dim,
-        'n_categories': n_categories,
-        'n_arms': n_arms,
-        'temp': temp,
-        'eps': eps,
-        'is_ref_prior': is_ref_prior,
-        'x_drop': x_drop,
-        's_drop': s_drop,
-        'lam': lam,
-        'lam_pc': lam_pc,
-        'tau': tau,
-        'beta': beta,
-        'is_hard': is_hard,
-        'is_variational': is_variational,
-        'momentum': 0.01,
-        'c_prior': c_prior,
-        'c_onehot': c_onehot,
-        'loss_fn': 'MSE',
-        'type': "MMIDASSPec"
+        "input_dim": input_dim,
+        "fc_dim": fc_dim,
+        "lowD_dim": lowD_dim,
+        "state_dim": state_dim,
+        "n_categories": n_categories,
+        "n_arms": n_arms,
+        "temp": temp,
+        "eps": eps,
+        "is_ref_prior": is_ref_prior,
+        "x_drop": x_drop,
+        "s_drop": s_drop,
+        "lam": lam,
+        "lam_pc": lam_pc,
+        "tau": tau,
+        "beta": beta,
+        "is_hard": is_hard,
+        "is_variational": is_variational,
+        "momentum": 0.01,
+        "c_prior": c_prior,
+        "c_onehot": c_onehot,
+        "loss_fn": "MSE",
+        "device": device,
+        "type": "MMIDASSPec",
     }
+
 
 def mspec_lookup(spec: MMIDASSpec, key: str) -> Any:
     return spec[key]
 
+
 def module_params(model: nn.Module) -> Params:
     return model.state_dict()
+
 
 def module_n_params(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+
 def params_is_equal(ps1: Params, ps2: Params) -> bool:
-    return set(ps1.keys()) == set(ps2.keys()) and all(th.equal(ps1[k], ps2[k]) for k in ps1)
+    return set(ps1.keys()) == set(ps2.keys()) and all(
+        th.equal(ps1[k], ps2[k]) for k in ps1
+    )
+
 
 def make_mmidas(spec: MMIDASSpec) -> nn.Module:
-    return mixVAE_model(input_dim=mspec_lookup(spec, 'input_dim'),
-                        fc_dim=mspec_lookup(spec, 'fc_dim'),
-                        n_categories=mspec_lookup(spec, 'n_categories'),
-                        state_dim=mspec_lookup(spec, 'state_dim'),
-                        lowD_dim=mspec_lookup(spec, 'lowD_dim'),
-                        x_drop=mspec_lookup(spec, 'x_drop'),
-                        s_drop=mspec_lookup(spec, 's_drop'),
-                        n_arm=mspec_lookup(spec, 'n_arms'),
-                        lam=mspec_lookup(spec, 'lam'),
-                        lam_pc=mspec_lookup(spec, 'lam_pc'),
-                        tau=mspec_lookup(spec, 'tau'),
-                        beta=mspec_lookup(spec, 'beta'),
-                        hard=mspec_lookup(spec, 'is_hard'),
-                        variational=mspec_lookup(spec, 'is_variational'),
-                        device=mspec_lookup(spec, 'device'),
-                        eps=mspec_lookup(spec, 'eps'),
-                        ref_prior=mspec_lookup(spec, 'is_ref_prior'),
-                        momentum=mspec_lookup(spec, 'momentum'),
-                        loss_mode=mspec_lookup(spec, 'loss_fn'))
-
-def make_mmidas2(spec: MMIDASSpec) -> nn.Module:
     return MMIDAS(spec)
+
+
+def _make_mmidas(spec: MMIDASSpec) -> nn.Module:
+    return mixVAE_model(
+        input_dim=mspec_lookup(spec, "input_dim"),
+        fc_dim=mspec_lookup(spec, "fc_dim"),
+        n_categories=mspec_lookup(spec, "n_categories"),
+        state_dim=mspec_lookup(spec, "state_dim"),
+        lowD_dim=mspec_lookup(spec, "lowD_dim"),
+        x_drop=mspec_lookup(spec, "x_drop"),
+        s_drop=mspec_lookup(spec, "s_drop"),
+        n_arm=mspec_lookup(spec, "n_arms"),
+        lam=mspec_lookup(spec, "lam"),
+        lam_pc=mspec_lookup(spec, "lam_pc"),
+        tau=mspec_lookup(spec, "tau"),
+        beta=mspec_lookup(spec, "beta"),
+        hard=mspec_lookup(spec, "is_hard"),
+        variational=mspec_lookup(spec, "is_variational"),
+        device=mspec_lookup(spec, "device"),
+        eps=mspec_lookup(spec, "eps"),
+        ref_prior=mspec_lookup(spec, "is_ref_prior"),
+        momentum=mspec_lookup(spec, "momentum"),
+        loss_mode=mspec_lookup(spec, "loss_fn"),
+    )
