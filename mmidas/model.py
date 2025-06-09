@@ -13,24 +13,25 @@ Params = dict[str, th.Tensor]
 MMIDASSpec = dict[str, Any]
 
 class MMIDAS(nn.Module):
-    def __init__(self, input_dim, fc_dim, n_categories, state_dim, lowD_dim, x_drop, s_drop, n_arm, lam, lam_pc,
-                 tau, beta, hard, variational, device, eps, momentum, ref_prior, loss_mode):
+    def __init__(self, beta, hard, variational, device, eps, momentum, loss_mode, spec):
         super(MMIDAS, self).__init__()
-        self.input_dim = input_dim
-        self.fc_dim = fc_dim
-        self.state_dim = state_dim
-        self.n_categories = n_categories
+
+        input_dim = mspec_lookup(spec, 'input_dim')
+        fc_dim = mspec_lookup(spec, 'fc_dim')
+        lowD_dim = mspec_lookup(spec, 'lowD_dim')
+        state_dim = mspec_lookup(spec, 'state_dim')
+        n_arms = mspec_lookup(spec, 'n_arms')
+        n_categories = mspec_lookup(spec, 'n_categories')
+        x_drop = mspec_lookup(spec, 'x_drop')
+        s_drop = mspec_lookup(spec, 's_drop')
+
+        self.spec = spec
         self.x_dp = nn.Dropout(x_drop)
         self.s_dp = nn.Dropout(s_drop)
         self.hard = hard
-        self.n_arm = n_arm
-        self.lam = lam
-        self.lam_pc = lam_pc
-        self.tau = tau
         self.beta = beta
         self.varitional = variational
         self.eps = eps
-        self.ref_prior = ref_prior
         self.momentum = momentum
         self.device = device
         self.loss_mode = loss_mode
@@ -41,31 +42,31 @@ class MMIDAS(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.tanh = nn.Tanh()
 
-        self.fc1 = mdl([nn.Linear(input_dim, fc_dim) for i in range(n_arm)])
-        self.fc2 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arm)])
-        self.fc3 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arm)])
-        self.fc4 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arm)])
-        self.fc5 = mdl([nn.Linear(fc_dim, lowD_dim) for i in range(n_arm)])
-        self.fcc = mdl([nn.Linear(lowD_dim, n_categories) for i in range(n_arm)])
-        self.fc_mu = mdl([nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arm)])
-        self.fc_sigma = mdl([nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arm)])
-        self.fc6 = mdl([nn.Linear(state_dim + n_categories, lowD_dim) for i in range(n_arm)])
-        self.fc7 = mdl([nn.Linear(lowD_dim, fc_dim) for i in range(n_arm)])
-        self.fc8 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arm)])
-        self.fc9 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arm)])
-        self.fc10 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arm)])
-        self.fc11 = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arm)])
+        self.fc1 = mdl([nn.Linear(input_dim, fc_dim) for i in range(n_arms)])
+        self.fc2 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
+        self.fc3 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
+        self.fc4 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
+        self.fc5 = mdl([nn.Linear(fc_dim, lowD_dim) for i in range(n_arms)])
+        self.fcc = mdl([nn.Linear(lowD_dim, n_categories) for i in range(n_arms)])
+        self.fc_mu = mdl([nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)])
+        self.fc_sigma = mdl([nn.Linear(lowD_dim + n_categories, state_dim) for i in range(n_arms)])
+        self.fc6 = mdl([nn.Linear(state_dim + n_categories, lowD_dim) for i in range(n_arms)])
+        self.fc7 = mdl([nn.Linear(lowD_dim, fc_dim) for i in range(n_arms)])
+        self.fc8 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
+        self.fc9 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
+        self.fc10 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
+        self.fc11 = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
         if loss_mode == 'ZINB':
-            self.fc11_p = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arm)])
-            self.fc11_r = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arm)])
+            self.fc11_p = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
+            self.fc11_r = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
 
 
-        self.batch_l1 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arm)])
-        self.batch_l2 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arm)])
-        self.batch_l3 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arm)])
-        self.batch_l4 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arm)])
-        self.batch_l5 = mdl([nn.BatchNorm1d(num_features=lowD_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arm)])
-        self.batch_s = mdl([nn.BatchNorm1d(num_features=state_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arm)])
+        self.batch_l1 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
+        self.batch_l2 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
+        self.batch_l3 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
+        self.batch_l4 = mdl([nn.BatchNorm1d(num_features=fc_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
+        self.batch_l5 = mdl([nn.BatchNorm1d(num_features=lowD_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
+        self.batch_s = mdl([nn.BatchNorm1d(num_features=state_dim, eps=eps, momentum=momentum, affine=False) for i in range(n_arms)])
 
         self.c_var_inv = [None] * 2
         self.stack_mean = [[] for a in range(2)]
@@ -86,7 +87,6 @@ class MMIDAS(nn.Module):
             return self.fc_mu[arm](x), self.sigmoid(self.fc_sigma[arm](x))
         else:
             return self.fc_mu[arm](x)
-
 
     def decoder(self, c, s, arm):
         s = self.s_dp(s)
@@ -109,34 +109,39 @@ class MMIDAS(nn.Module):
         return self.relu(self.fc11[arm](x)), self.sigmoid(self.fc11_p[arm](x)), self.sigmoid(self.fc11_r[arm](x))
 
     def forward(self, x, temp, prior_c=[], eval=False, mask=None):
-        recon_x = [None] * self.n_arm
-        zinb_pi = [None] * self.n_arm
-        zinb_r = [None] * self.n_arm
-        p_x = [None] * self.n_arm
-        s, c = [None] * self.n_arm, [None] * self.n_arm
-        mu, log_var = [None] * self.n_arm, [None] * self.n_arm
-        qc, alr_qc = [None] * self.n_arm, [None] * self.n_arm
-        x_low, log_qc = [None] * self.n_arm, [None] * self.n_arm
+        n_arms = mspec_lookup(self.spec, 'n_arms')
+        n_categories = mspec_lookup(self.spec, 'n_categories')
+        tau = mspec_lookup(self.spec, 'tau')
+        is_ref_prior = mspec_lookup(self.spec, 'is_ref_prior')
 
-        for arm in range(self.n_arm):
+        recon_x = [None] * n_arms
+        zinb_pi = [None] * n_arms
+        zinb_r = [None] * n_arms
+        p_x = [None] * n_arms
+        s, c = [None] * n_arms, [None] * n_arms
+        mu, log_var = [None] * n_arms, [None] * n_arms
+        qc, alr_qc = [None] * n_arms, [None] * n_arms
+        x_low, log_qc = [None] * n_arms, [None] * n_arms
+
+        for arm in range(n_arms):
             x_low[arm], log_qc[arm] = self.encoder(x[arm], arm)
 
             if mask is not None:
-                qc_tmp = F.softmax(log_qc[arm][:, mask] / self.tau, dim=-1)
+                qc_tmp = F.softmax(log_qc[arm][:, mask] / tau, dim=-1)
                 qc[arm] = th.zeros((log_qc[arm].size(0), log_qc[arm].size(1))).to(self.device)
 
                 qc[arm][:, mask] = qc_tmp
             else:
-                qc[arm] = F.softmax(log_qc[arm] / self.tau, dim=-1)
+                qc[arm] = F.softmax(log_qc[arm] / tau, dim=-1)
 
-            q_ = qc[arm].view(log_qc[arm].size(0), 1, self.n_categories)
+            q_ = qc[arm].view(log_qc[arm].size(0), 1, n_categories)
 
             if eval:
-                c[arm] = self.gumbel_softmax(q_, 1, self.n_categories, temp, hard=True, gumble_noise=False)
+                c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=True, gumble_noise=False)
             else:
-                c[arm] = self.gumbel_softmax(q_, 1, self.n_categories, temp, hard=self.hard)
+                c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=self.hard)
 
-            if self.ref_prior:
+            if is_ref_prior:
                 y = th.cat((x_low[arm], prior_c), dim=1)
             else:
                 y = th.cat((x_low[arm], c[arm]), dim=1)
@@ -191,16 +196,22 @@ class MMIDAS(nn.Module):
             return y_hard.view(-1, latent_dim * categorical_dim)
 
     def loss(self, recon_x, p_x, r_x, x, mu, log_sigma, qc, c, prior_c=[]):
-        loss_indep, KLD_cont = [None] * self.n_arm, [None] * self.n_arm
-        log_qz, l_rec = [None] * self.n_arm, [None] * self.n_arm
-        var_qz, var_qz_inv = [None] * self.n_arm, [None] * self.n_arm
-        mu_in, var_in = [None] * self.n_arm, [None] * self.n_arm
-        mu_tmp, var_tmp = [None] * self.n_arm, [None] * self.n_arm
-        loglikelihood = [None] * self.n_arm
+        n_arms = mspec_lookup(self.spec, 'n_arms')
+        n_categories = mspec_lookup(self.spec, 'n_categories')
+        lam = mspec_lookup(self.spec, 'lam')
+        lam_pc = mspec_lookup(self.spec, 'lam_pc')
+        is_ref_prior = mspec_lookup(self.spec, 'is_ref_prior')
+
+        loss_indep, KLD_cont = [None] * n_arms, [None] * n_arms
+        log_qz, l_rec = [None] * n_arms, [None] * n_arms
+        var_qz, var_qz_inv = [None] * n_arms, [None] * n_arms
+        mu_in, var_in = [None] * n_arms, [None] * n_arms
+        mu_tmp, var_tmp = [None] * n_arms, [None] * n_arms
+        loglikelihood = [None] * n_arms
         batch_size, n_cat = c[0].size()
         neg_joint_entropy, z_distance_rep, z_distance, dist_a = [], [], [], []
 
-        for arm_a in range(self.n_arm):
+        for arm_a in range(n_arms):
             loglikelihood[arm_a] = F.mse_loss(recon_x[arm_a], x[arm_a], reduction='mean') + x[arm_a].size(0) * np.log(2 * np.pi)
             if self.loss_mode == 'MSE':
                 l_rec[arm_a] = 0.5 * F.mse_loss(recon_x[arm_a], x[arm_a], reduction='sum') / (x[arm_a].size(0))
@@ -222,7 +233,7 @@ class MMIDAS(nn.Module):
 
             var_qz_inv[0] = (1 / (var_qz0 + self.eps)).repeat(qc[arm_a].size(0), 1).sqrt()
 
-            for arm_b in range(arm_a + 1, self.n_arm):
+            for arm_b in range(arm_a + 1, n_arms):
                 log_qz[1] = th.log(qc[arm_b] + self.eps)
                 tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + \
                               (th.sum(qc[arm_b] * log_qz[1], dim=-1)).mean()
@@ -236,22 +247,22 @@ class MMIDAS(nn.Module):
                 z_distance_rep.append((th.norm((c[arm_a] - c[arm_b]), p=2, dim=1).pow(2)).mean())
                 z_distance.append((th.norm((log_qz[0] * var_qz_inv[0]) - (log_qz[1] * var_qz_inv[1]), p=2, dim=1).pow(2)).mean())
 
-            if self.ref_prior:
-                n_comb = max(self.n_arm * (self.n_arm + 1) / 2, 1)
-                scaler = self.n_arm
+            if is_ref_prior:
+                n_comb = max(n_arms * (n_arms + 1) / 2, 1)
+                scaler = n_arms
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
                 z_distance_rep.append((th.norm((c[arm_a] - prior_c), p=2, dim=1).pow(2)).mean())
                 tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
-                qc_bin = self.gumbel_softmax(qc[arm_a], 1, self.n_categories, 1, hard=True, gumble_noise=False)
-                z_distance.append(self.lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
+                qc_bin = self.gumbel_softmax(qc[arm_a], 1, n_categories, 1, hard=True, gumble_noise=False)
+                z_distance.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
             else:
-                n_comb = max(self.n_arm * (self.n_arm - 1) / 2, 1)
-                scaler = max((self.n_arm - 1), 1)
+                n_comb = max(n_arms * (n_arms - 1) / 2, 1)
+                scaler = max((n_arms - 1), 1)
 
 
-        loss_joint = self.lam * sum(z_distance) + sum(neg_joint_entropy) + n_comb * ((n_cat / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * self.lam))
+        loss_joint = lam * sum(z_distance) + sum(neg_joint_entropy) + n_comb * ((n_cat / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * lam))
 
         loss = scaler * sum(loss_indep) + loss_joint
 
@@ -357,22 +368,11 @@ def make_mmidas(spec: MMIDASSpec) -> nn.Module:
                         loss_mode=mspec_lookup(spec, 'loss'))
 
 def make_mmidas2(spec: MMIDASSpec) -> nn.Module:
-    return MMIDAS(input_dim=mspec_lookup(spec, 'input_dim'),
-                  fc_dim=mspec_lookup(spec, 'fc_dim'),
-                  n_categories=mspec_lookup(spec, 'n_categories'),
-                  state_dim=mspec_lookup(spec, 'state_dim'),
-                  lowD_dim=mspec_lookup(spec, 'lowD_dim'),
-                  x_drop=mspec_lookup(spec, 'x_drop'),
-                  s_drop=mspec_lookup(spec, 's_drop'),
-                  n_arm=mspec_lookup(spec, 'n_arms'),
-                  lam=mspec_lookup(spec, 'lam'),
-                  lam_pc=mspec_lookup(spec, 'lam_pc'),
-                  tau=mspec_lookup(spec, 'tau'),
-                  beta=mspec_lookup(spec, 'beta'),
+    return MMIDAS(beta=mspec_lookup(spec, 'beta'),
                   hard=mspec_lookup(spec, 'is_hard'),
                   variational=mspec_lookup(spec, 'is_variational'),
                   device=mspec_lookup(spec, 'device'),
                   eps=mspec_lookup(spec, 'eps'),
-                  ref_prior=mspec_lookup(spec, 'is_ref_prior'),
                   momentum=mspec_lookup(spec, 'momentum'),
-                  loss_mode=mspec_lookup(spec, 'loss'))
+                  loss_mode=mspec_lookup(spec, 'loss'),
+                  spec=spec)
