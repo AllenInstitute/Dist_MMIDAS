@@ -9,6 +9,7 @@ dependencies = [
     "jupyter>=1.1.1",
     "jupytext>=1.17.1",
     "matplotlib>=3.10.3",
+    "mlx>=0.26.1",
     "numpy>=2.2.6",
     "scikit-learn>=1.6.1",
     "toml>=0.10.2",

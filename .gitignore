@@ -38,3 +38,5 @@ mmidas/utils/__pycache__/tools.cpython-312.pyc
 mmidas/utils/__pycache__/dataloader.cpython-312.pyc
 
 pretrained/*
+
+.envrc
