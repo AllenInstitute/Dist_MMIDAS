@@ -13,7 +13,7 @@ Params = dict[str, th.Tensor]
 MMIDASSpec = dict[str, Any]
 
 class MMIDAS(nn.Module):
-    def __init__(self, beta, hard, variational, device, eps, momentum, loss_mode, spec):
+    def __init__(self, spec):
         super(MMIDAS, self).__init__()
 
         input_dim = mspec_lookup(spec, 'input_dim')
@@ -22,19 +22,15 @@ class MMIDAS(nn.Module):
         state_dim = mspec_lookup(spec, 'state_dim')
         n_arms = mspec_lookup(spec, 'n_arms')
         n_categories = mspec_lookup(spec, 'n_categories')
+        eps = mspec_lookup(spec, 'eps')
+        momentum = mspec_lookup(spec, 'momentum')
         x_drop = mspec_lookup(spec, 'x_drop')
         s_drop = mspec_lookup(spec, 's_drop')
+        loss_fn = mspec_lookup(spec, 'loss_fn')
 
         self.spec = spec
         self.x_dp = nn.Dropout(x_drop)
         self.s_dp = nn.Dropout(s_drop)
-        self.hard = hard
-        self.beta = beta
-        self.varitional = variational
-        self.eps = eps
-        self.momentum = momentum
-        self.device = device
-        self.loss_mode = loss_mode
 
         self.relu = nn.ReLU()
         self.lrelu = nn.LeakyReLU(0.1, inplace=True)
@@ -56,7 +52,7 @@ class MMIDAS(nn.Module):
         self.fc9 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
         self.fc10 = mdl([nn.Linear(fc_dim, fc_dim) for i in range(n_arms)])
         self.fc11 = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
-        if loss_mode == 'ZINB':
+        if loss_fn == 'ZINB':
             self.fc11_p = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
             self.fc11_r = mdl([nn.Linear(fc_dim, input_dim) for i in range(n_arms)])
 
@@ -83,7 +79,7 @@ class MMIDAS(nn.Module):
         return z, F.softmax(self.fcc[arm](z), dim=-1)
 
     def intermed(self, x, arm):
-        if self.varitional:
+        if mspec_lookup(self.spec, 'is_variational'):
             return self.fc_mu[arm](x), self.sigmoid(self.fc_sigma[arm](x))
         else:
             return self.fc_mu[arm](x)
@@ -111,8 +107,14 @@ class MMIDAS(nn.Module):
     def forward(self, x, temp, prior_c=[], eval=False, mask=None):
         n_arms = mspec_lookup(self.spec, 'n_arms')
         n_categories = mspec_lookup(self.spec, 'n_categories')
+        eps = mspec_lookup(self.spec, 'eps')
         tau = mspec_lookup(self.spec, 'tau')
+        loss_fn = mspec_lookup(self.spec, 'loss_fn')
+        is_hard = mspec_lookup(self.spec, 'is_hard')
         is_ref_prior = mspec_lookup(self.spec, 'is_ref_prior')
+        is_variational = mspec_lookup(self.spec, 'is_variational')
+
+        device = mspec_lookup(self.spec, 'device')
 
         recon_x = [None] * n_arms
         zinb_pi = [None] * n_arms
@@ -128,7 +130,7 @@ class MMIDAS(nn.Module):
 
             if mask is not None:
                 qc_tmp = F.softmax(log_qc[arm][:, mask] / tau, dim=-1)
-                qc[arm] = th.zeros((log_qc[arm].size(0), log_qc[arm].size(1))).to(self.device)
+                qc[arm] = th.zeros((log_qc[arm].size(0), log_qc[arm].size(1))).to(device)
 
                 qc[arm][:, mask] = qc_tmp
             else:
@@ -139,23 +141,23 @@ class MMIDAS(nn.Module):
             if eval:
                 c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=True, gumble_noise=False)
             else:
-                c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=self.hard)
+                c[arm] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=is_hard)
 
             if is_ref_prior:
                 y = th.cat((x_low[arm], prior_c), dim=1)
             else:
                 y = th.cat((x_low[arm], c[arm]), dim=1)
 
-            if self.varitional:
+            if is_variational:
                 mu[arm], var = self.intermed(y, arm)
-                log_var[arm] = (var + self.eps).log()
+                log_var[arm] = (var + eps).log()
                 s[arm] = self.reparam_trick(mu[arm], log_var[arm])
             else:
                 mu[arm] = self.intermed(y, arm)
                 log_var[arm] = 0. * mu[arm]
                 s[arm] = self.intermed(y, arm)
             
-            if self.loss_mode == 'ZINB':
+            if loss_fn == 'ZINB':
                 recon_x[arm], zinb_pi[arm], zinb_r[arm] = self.decoder_zinb(c[arm], s[arm], arm)
             else:
                 recon_x[arm] = self.decoder(c[arm], s[arm], arm)
@@ -163,18 +165,24 @@ class MMIDAS(nn.Module):
         return recon_x, zinb_pi, zinb_r, x_low, qc, s, c, mu, log_var, log_qc
 
     def reparam_trick(self, mu, log_sigma):
+        device = mspec_lookup(self.spec, 'device')
+
         std = log_sigma.exp().sqrt()
-        eps = th.rand_like(std).to(self.device)
+        eps = th.rand_like(std).to(device)
         return eps.mul(std).add(mu)
 
     def sample_gumbel(self, shape):
-        U = th.rand(shape).to(self.device)
+        device = mspec_lookup(self.spec, 'device')
 
-        return -Variable(th.log(-th.log(U + self.eps) + self.eps))
+        eps = mspec_lookup(self.spec, 'eps')
+        U = th.rand(shape).to(device)
+
+        return -Variable(th.log(-th.log(U + eps) + eps))
 
 
     def gumbel_softmax_sample(self, phi, temperature):
-        logits = (phi + self.eps).log() + self.sample_gumbel(phi.size())
+        eps = mspec_lookup(self.spec, 'eps')
+        logits = (phi + eps).log() + self.sample_gumbel(phi.size())
         return F.softmax(logits / temperature, dim=-1)
 
 
@@ -198,9 +206,13 @@ class MMIDAS(nn.Module):
     def loss(self, recon_x, p_x, r_x, x, mu, log_sigma, qc, c, prior_c=[]):
         n_arms = mspec_lookup(self.spec, 'n_arms')
         n_categories = mspec_lookup(self.spec, 'n_categories')
+        beta = mspec_lookup(self.spec, 'beta')
+        eps = mspec_lookup(self.spec, 'eps')
         lam = mspec_lookup(self.spec, 'lam')
         lam_pc = mspec_lookup(self.spec, 'lam_pc')
+        loss_fn = mspec_lookup(self.spec, 'loss_fn')
         is_ref_prior = mspec_lookup(self.spec, 'is_ref_prior')
+        is_variational = mspec_lookup(self.spec, 'is_variational')
 
         loss_indep, KLD_cont = [None] * n_arms, [None] * n_arms
         log_qz, l_rec = [None] * n_arms, [None] * n_arms
@@ -213,34 +225,36 @@ class MMIDAS(nn.Module):
 
         for arm_a in range(n_arms):
             loglikelihood[arm_a] = F.mse_loss(recon_x[arm_a], x[arm_a], reduction='mean') + x[arm_a].size(0) * np.log(2 * np.pi)
-            if self.loss_mode == 'MSE':
+            if loss_fn == 'MSE':
                 l_rec[arm_a] = 0.5 * F.mse_loss(recon_x[arm_a], x[arm_a], reduction='sum') / (x[arm_a].size(0))
                 rec_bin = th.where(recon_x[arm_a] > 0.1, 1., 0.)
                 x_bin = th.where(x[arm_a] > 0.1, 1., 0.)
                 l_rec[arm_a] += 0.5 * F.binary_cross_entropy(rec_bin, x_bin)
-            elif self.loss_mode == 'ZINB':
+            elif loss_fn == 'ZINB':
                 l_rec[arm_a] = zinb_loss(recon_x[arm_a], p_x[arm_a], r_x[arm_a], x[arm_a])
+            else:
+                raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
-            if self.varitional:
+            if is_variational:
                 KLD_cont[arm_a] = (-0.5 * th.mean(1 + log_sigma[arm_a] - mu[arm_a].pow(2) - log_sigma[arm_a].exp(), dim=0)).sum()
-                loss_indep[arm_a] = l_rec[arm_a] + self.beta * KLD_cont[arm_a]
+                loss_indep[arm_a] = l_rec[arm_a] + beta * KLD_cont[arm_a]
             else:
                 loss_indep[arm_a] = l_rec[arm_a]
                 KLD_cont[arm_a] = [0.]
 
-            log_qz[0] = th.log(qc[arm_a] + self.eps)
+            log_qz[0] = th.log(qc[arm_a] + eps)
             var_qz0 = qc[arm_a].var(0)
 
-            var_qz_inv[0] = (1 / (var_qz0 + self.eps)).repeat(qc[arm_a].size(0), 1).sqrt()
+            var_qz_inv[0] = (1 / (var_qz0 + eps)).repeat(qc[arm_a].size(0), 1).sqrt()
 
             for arm_b in range(arm_a + 1, n_arms):
-                log_qz[1] = th.log(qc[arm_b] + self.eps)
+                log_qz[1] = th.log(qc[arm_b] + eps)
                 tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + \
                               (th.sum(qc[arm_b] * log_qz[1], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
                 # var = qc[arm_b].var(0)
                 var_qz1 = qc[arm_b].var(0)
-                var_qz_inv[1] = (1 / (var_qz1 + self.eps)).repeat(qc[arm_b].size(0), 1).sqrt()
+                var_qz_inv[1] = (1 / (var_qz1 + eps)).repeat(qc[arm_b].size(0), 1).sqrt()
 
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
@@ -330,7 +344,7 @@ def make_mspec(
         'momentum': 0.01,
         'c_prior': c_prior,
         'c_onehot': c_onehot,
-        'loss': 'MSE',
+        'loss_fn': 'MSE',
         'type': "MMIDASSPec"
     }
 
@@ -365,14 +379,7 @@ def make_mmidas(spec: MMIDASSpec) -> nn.Module:
                         eps=mspec_lookup(spec, 'eps'),
                         ref_prior=mspec_lookup(spec, 'is_ref_prior'),
                         momentum=mspec_lookup(spec, 'momentum'),
-                        loss_mode=mspec_lookup(spec, 'loss'))
+                        loss_mode=mspec_lookup(spec, 'loss_fn'))
 
 def make_mmidas2(spec: MMIDASSpec) -> nn.Module:
-    return MMIDAS(beta=mspec_lookup(spec, 'beta'),
-                  hard=mspec_lookup(spec, 'is_hard'),
-                  variational=mspec_lookup(spec, 'is_variational'),
-                  device=mspec_lookup(spec, 'device'),
-                  eps=mspec_lookup(spec, 'eps'),
-                  momentum=mspec_lookup(spec, 'momentum'),
-                  loss_mode=mspec_lookup(spec, 'loss'),
-                  spec=spec)
+    return MMIDAS(spec)
