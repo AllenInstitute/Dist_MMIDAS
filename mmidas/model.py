@@ -64,13 +64,13 @@ class MMIDAS(nn.Module):
         self.c_mean = [None] * 2
         self.c_var = [None] * 2
 
-    def encoder(self, x, arm):
-        x = self.norm1[arm](F.relu(self.fc1[arm](self.x_dp(x))))
-        x = self.norm2[arm](F.relu(self.fc2[arm](x)))
-        x = self.norm3[arm](F.relu(self.fc3[arm](x)))
-        x = self.norm4[arm](F.relu(self.fc4[arm](x)))
-        z = self.norm5[arm](F.relu(self.fc5[arm](x)))
-        return z, F.softmax(self.fcc[arm](z), dim=-1)
+    def encoder(self, x, a):
+        x = self.norm1[a](F.relu(self.fc1[a](self.x_dp(x))))
+        x = self.norm2[a](F.relu(self.fc2[a](x)))
+        x = self.norm3[a](F.relu(self.fc3[a](x)))
+        x = self.norm4[a](F.relu(self.fc4[a](x)))
+        z = self.norm5[a](F.relu(self.fc5[a](x)))
+        return z, F.softmax(self.fcc[a](z), dim=-1)
 
     def intermed(self, x, arm):
         if mspec_lookup(self.spec, "is_variational"):
