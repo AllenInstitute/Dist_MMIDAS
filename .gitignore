@@ -40,3 +40,5 @@ mmidas/utils/__pycache__/dataloader.cpython-312.pyc
 pretrained/*
 
 .envrc
+
+*.pt
