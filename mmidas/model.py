@@ -72,11 +72,12 @@ class MMIDAS(nn.Module):
         z = self.norm5[a](F.relu(self.fc5[a](x)))
         return z, F.softmax(self.fcc[a](z), dim=-1)
 
-    def intermed(self, x, arm):
-        if mspec_lookup(self.spec, "is_variational"):
-            return self.fc_mu[arm](x), F.sigmoid(self.fc_sigma[arm](x))
+    def intermed(self, x, a):
+        is_variational = mspec_lookup(self.spec, "is_variational")
+        if is_variational:
+            return self.fc_mu[a](x), F.sigmoid(self.fc_sigma[a](x))
         else:
-            return self.fc_mu[arm](x)
+            return self.fc_mu[a](x)
 
     def decoder(self, c, s, arm):
         s = self.s_dp(s)
