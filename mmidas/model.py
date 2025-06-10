@@ -226,63 +226,63 @@ class MMIDAS(nn.Module):
         loglikelihood = [None] * A
         neg_joint_entropy, z_distance_rep, z_distance = [], [], []
 
-        for arm_a in range(A):
-            loglikelihood[arm_a] = F.mse_loss(
-                recon_x[arm_a], x[arm_a], reduction="mean"
-            ) + x[arm_a].size(0) * np.log(2 * np.pi)
+        for a in range(A):
+            loglikelihood[a] = F.mse_loss(
+                recon_x[a], x[a], reduction="mean"
+            ) + x[a].size(0) * np.log(2 * np.pi)
             if loss_fn == "MSE":
-                l_rec[arm_a] = (
+                l_rec[a] = (
                     0.5
-                    * F.mse_loss(recon_x[arm_a], x[arm_a], reduction="sum")
-                    / (x[arm_a].size(0))
+                    * F.mse_loss(recon_x[a], x[a], reduction="sum")
+                    / (x[a].size(0))
                 )
-                rec_bin = th.where(recon_x[arm_a] > 0.1, 1.0, 0.0)
-                x_bin = th.where(x[arm_a] > 0.1, 1.0, 0.0)
-                l_rec[arm_a] += 0.5 * F.binary_cross_entropy(rec_bin, x_bin)
+                rec_bin = th.where(recon_x[a] > 0.1, 1.0, 0.0)
+                x_bin = th.where(x[a] > 0.1, 1.0, 0.0)
+                l_rec[a] += 0.5 * F.binary_cross_entropy(rec_bin, x_bin)
             elif loss_fn == "ZINB":
-                l_rec[arm_a] = zinb_loss(
-                    recon_x[arm_a], p_x[arm_a], r_x[arm_a], x[arm_a]
+                l_rec[a] = zinb_loss(
+                    recon_x[a], p_x[a], r_x[a], x[a]
                 )
             else:
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
             if is_variational:
-                kl_cont[arm_a] = (
+                kl_cont[a] = (
                     -0.5
                     * th.mean(
                         1
-                        + log_sigma[arm_a]
-                        - mu[arm_a].pow(2)
-                        - log_sigma[arm_a].exp(),
+                        + log_sigma[a]
+                        - mu[a].pow(2)
+                        - log_sigma[a].exp(),
                         dim=0,
                     )
                 ).sum()
-                loss_indep[arm_a] = l_rec[arm_a] + beta * kl_cont[arm_a]
+                loss_indep[a] = l_rec[a] + beta * kl_cont[a]
             else:
-                loss_indep[arm_a] = l_rec[arm_a]
-                kl_cont[arm_a] = [0.0]
+                loss_indep[a] = l_rec[a]
+                kl_cont[a] = [0.0]
 
-            log_qz[0] = th.log(qc[arm_a] + eps)
-            var_qz0 = qc[arm_a].var(0)
+            log_qz[0] = th.log(qc[a] + eps)
+            var_qz0 = qc[a].var(0)
 
-            var_qz_inv[0] = (1 / (var_qz0 + eps)).repeat(qc[arm_a].size(0), 1).sqrt()
+            var_qz_inv[0] = (1 / (var_qz0 + eps)).repeat(qc[a].size(0), 1).sqrt()
 
-            for arm_b in range(arm_a + 1, A):
-                log_qz[1] = th.log(qc[arm_b] + eps)
-                tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + (
-                    th.sum(qc[arm_b] * log_qz[1], dim=-1)
+            for b in range(a + 1, A):
+                log_qz[1] = th.log(qc[b] + eps)
+                tmp_entropy = (th.sum(qc[a] * log_qz[0], dim=-1)).mean() + (
+                    th.sum(qc[b] * log_qz[1], dim=-1)
                 ).mean()
                 neg_joint_entropy.append(tmp_entropy)
                 # var = qc[arm_b].var(0)
-                var_qz1 = qc[arm_b].var(0)
+                var_qz1 = qc[b].var(0)
                 var_qz_inv[1] = (
-                    (1 / (var_qz1 + eps)).repeat(qc[arm_b].size(0), 1).sqrt()
+                    (1 / (var_qz1 + eps)).repeat(qc[b].size(0), 1).sqrt()
                 )
 
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
                 z_distance_rep.append(
-                    (th.norm((c[arm_a] - c[arm_b]), p=2, dim=1).pow(2)).mean()
+                    (th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()
                 )
                 z_distance.append(
                     (
@@ -300,12 +300,12 @@ class MMIDAS(nn.Module):
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
                 z_distance_rep.append(
-                    (th.norm((c[arm_a] - prior_c), p=2, dim=1).pow(2)).mean()
+                    (th.norm((c[a] - prior_c), p=2, dim=1).pow(2)).mean()
                 )
-                tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean()
+                tmp_entropy = (th.sum(qc[a] * log_qz[0], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
                 qc_bin = self.gumbel_softmax(
-                    qc[arm_a], 1, K, 1, hard=True, gumble_noise=False
+                    qc[a], 1, K, 1, hard=True, gumble_noise=False
                 )
                 z_distance.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
             else:
