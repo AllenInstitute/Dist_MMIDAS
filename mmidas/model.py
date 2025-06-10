@@ -210,8 +210,8 @@ class MMIDAS(nn.Module):
             return y_hard.view(-1, latent_dim * categorical_dim)
 
     def loss(self, recon_x, p_x, r_x, x, mu, log_sigma, qc, c, prior_c=[]):
-        n_arms = mspec_lookup(self.spec, "n_arms")
-        n_categories = mspec_lookup(self.spec, "n_categories")
+        A = mspec_lookup(self.spec, "n_arms")
+        K = mspec_lookup(self.spec, "n_categories")
         beta = mspec_lookup(self.spec, "beta")
         eps = mspec_lookup(self.spec, "eps")
         lam = mspec_lookup(self.spec, "lam")
@@ -220,14 +220,14 @@ class MMIDAS(nn.Module):
         is_ref_prior = mspec_lookup(self.spec, "is_ref_prior")
         is_variational = mspec_lookup(self.spec, "is_variational")
 
-        loss_indep, KLD_cont = [None] * n_arms, [None] * n_arms
-        log_qz, l_rec = [None] * n_arms, [None] * n_arms
-        var_qz_inv = [None] * n_arms
-        loglikelihood = [None] * n_arms
+        loss_indep, KLD_cont = [None] * A, [None] * A
+        log_qz, l_rec = [None] * A, [None] * A
+        var_qz_inv = [None] * A
+        loglikelihood = [None] * A
         norm_size, n_cat = c[0].size()
         neg_joint_entropy, z_distance_rep, z_distance, dist_a = [], [], [], []
 
-        for arm_a in range(n_arms):
+        for arm_a in range(A):
             loglikelihood[arm_a] = F.mse_loss(
                 recon_x[arm_a], x[arm_a], reduction="mean"
             ) + x[arm_a].size(0) * np.log(2 * np.pi)
@@ -268,7 +268,7 @@ class MMIDAS(nn.Module):
 
             var_qz_inv[0] = (1 / (var_qz0 + eps)).repeat(qc[arm_a].size(0), 1).sqrt()
 
-            for arm_b in range(arm_a + 1, n_arms):
+            for arm_b in range(arm_a + 1, A):
                 log_qz[1] = th.log(qc[arm_b] + eps)
                 tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + (
                     th.sum(qc[arm_b] * log_qz[1], dim=-1)
@@ -296,8 +296,8 @@ class MMIDAS(nn.Module):
                 )
 
             if is_ref_prior:
-                n_comb = max(n_arms * (n_arms + 1) / 2, 1)
-                scaler = n_arms
+                n_comb = max(A * (A + 1) / 2, 1)
+                scaler = A
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
                 z_distance_rep.append(
@@ -306,17 +306,17 @@ class MMIDAS(nn.Module):
                 tmp_entropy = (th.sum(qc[arm_a] * log_qz[0], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
                 qc_bin = self.gumbel_softmax(
-                    qc[arm_a], 1, n_categories, 1, hard=True, gumble_noise=False
+                    qc[arm_a], 1, K, 1, hard=True, gumble_noise=False
                 )
                 z_distance.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
             else:
-                n_comb = max(n_arms * (n_arms - 1) / 2, 1)
-                scaler = max((n_arms - 1), 1)
+                n_comb = max(A * (A - 1) / 2, 1)
+                scaler = max((A - 1), 1)
 
         loss_joint = (
             lam * sum(z_distance)
             + sum(neg_joint_entropy)
-            + n_comb * ((n_cat / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * lam))
+            + n_comb * ((K / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * lam))
         )
 
         loss = scaler * sum(loss_indep) + loss_joint
