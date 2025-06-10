@@ -222,9 +222,7 @@ class MMIDAS(nn.Module):
 
         loss_indep, KLD_cont = [None] * n_arms, [None] * n_arms
         log_qz, l_rec = [None] * n_arms, [None] * n_arms
-        var_qz, var_qz_inv = [None] * n_arms, [None] * n_arms
-        mu_in, var_in = [None] * n_arms, [None] * n_arms
-        mu_tmp, var_tmp = [None] * n_arms, [None] * n_arms
+        var_qz_inv = [None] * n_arms
         loglikelihood = [None] * n_arms
         norm_size, n_cat = c[0].size()
         neg_joint_entropy, z_distance_rep, z_distance, dist_a = [], [], [], []
