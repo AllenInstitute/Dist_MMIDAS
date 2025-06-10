@@ -392,12 +392,12 @@ class mixVAE_model(nn.Module):
 
             for arm_b in range(arm_a + 1, self.n_arm):
                 log_qz[1] = torch.log(qc[arm_b] + self.eps)
+                var_qz1 = qc[arm_b].var(0)
+                var_qz_inv[1] = (1 / (var_qz1 + self.eps)).repeat(qc[arm_b].size(0), 1).sqrt()
+
                 tmp_entropy = (torch.sum(qc[arm_a] * log_qz[0], dim=-1)).mean() + \
                               (torch.sum(qc[arm_b] * log_qz[1], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
-                # var = qc[arm_b].var(0)
-                var_qz1 = qc[arm_b].var(0)
-                var_qz_inv[1] = (1 / (var_qz1 + self.eps)).repeat(qc[arm_b].size(0), 1).sqrt()
 
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance

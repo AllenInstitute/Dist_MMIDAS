@@ -5,7 +5,7 @@ import numpy as np
 # TODO: feat: add augmenter
 # TODO: feat: add reference prior
 # TODO: feat: automatic logging of multiple rec losses
-def train_mmidas(model, solver, train_loader, test_loader, spec):
+def mmidas_train(model, solver, train_loader, test_loader, spec):
     print("using device:", spec['device'])
     print(f"1 epoch = {len(train_loader)} batches")
 
