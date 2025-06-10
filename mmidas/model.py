@@ -12,6 +12,8 @@ from nn_model import mixVAE_model
 Params = dict[str, th.Tensor]
 MMIDASSpec = dict[str, Any]
 
+def mean(xs):
+    return sum(xs) / len(xs)
 
 class MMIDAS(nn.Module):
     def __init__(self, spec):
@@ -104,8 +106,8 @@ class MMIDAS(nn.Module):
         )
 
     def forward(self, x, temp, prior_c=[], eval=False, mask=None):
-        n_arms = mspec_lookup(self.spec, "n_arms")
-        n_categories = mspec_lookup(self.spec, "n_categories")
+        A = mspec_lookup(self.spec, "n_arms")
+        K = mspec_lookup(self.spec, "n_categories")
         eps = mspec_lookup(self.spec, "eps")
         tau = mspec_lookup(self.spec, "tau")
         loss_fn = mspec_lookup(self.spec, "loss_fn")
@@ -115,15 +117,15 @@ class MMIDAS(nn.Module):
 
         device = mspec_lookup(self.spec, "device")
 
-        recon_x = [None] * n_arms
-        zinb_pi = [None] * n_arms
-        zinb_r = [None] * n_arms
-        s, c = [None] * n_arms, [None] * n_arms
-        mu, log_var = [None] * n_arms, [None] * n_arms
-        qc = [None] * n_arms
-        x_low, log_qc = [None] * n_arms, [None] * n_arms
+        x_rec = [None] * A
+        zinb_pi = [None] * A
+        zinb_r = [None] * A
+        s, c = [None] * A, [None] * A
+        s_mean, s_logvar = [None] * A, [None] * A
+        qc = [None] * A
+        x_low, log_qc = [None] * A, [None] * A
 
-        for a in range(n_arms):
+        for a in range(A):
             x_low[a], log_qc[a] = self.encoder(x[a], a)
 
             if mask is not None:
@@ -134,14 +136,14 @@ class MMIDAS(nn.Module):
             else:
                 qc[a] = F.softmax(log_qc[a] / tau, dim=-1)
 
-            q_ = qc[a].view(len(log_qc[a]), 1, n_categories)
+            q_ = qc[a].view(len(log_qc[a]), 1, K)
 
             if eval:
                 c[a] = self.gumbel_softmax(
-                    q_, 1, n_categories, temp, hard=True, gumble_noise=False
+                    q_, 1, K, temp, hard=True, gumble_noise=False
                 )
             else:
-                c[a] = self.gumbel_softmax(q_, 1, n_categories, temp, hard=is_hard)
+                c[a] = self.gumbel_softmax(q_, 1, K, temp, hard=is_hard)
 
             if is_ref_prior:
                 y = th.cat((x_low[a], prior_c), dim=1)
@@ -149,20 +151,20 @@ class MMIDAS(nn.Module):
                 y = th.cat((x_low[a], c[a]), dim=1)
 
             if is_variational:
-                mu[a], var = self.intermed(y, a)
-                log_var[a] = (var + eps).log()
-                s[a] = self.reparam_trick(mu[a], log_var[a])
+                s_mean[a], var = self.intermed(y, a)
+                s_logvar[a] = (var + eps).log()
+                s[a] = self.reparam_trick(s_mean[a], s_logvar[a])
             else:
-                mu[a] = self.intermed(y, a)
-                log_var[a] = 0.0 * mu[a]
+                s_mean[a] = self.intermed(y, a)
+                s_logvar[a] = 0.0 * s_mean[a]
                 s[a] = self.intermed(y, a)
 
             if loss_fn == "ZINB":
-                recon_x[a], zinb_pi[a], zinb_r[a] = self.decoder_zinb(c[a], s[a], a)
+                x_rec[a], zinb_pi[a], zinb_r[a] = self.decoder_zinb(c[a], s[a], a)
             else:
-                recon_x[a] = self.decoder(c[a], s[a], a)
+                x_rec[a] = self.decoder(c[a], s[a], a)
 
-        return recon_x, zinb_pi, zinb_r, x_low, qc, s, c, mu, log_var, log_qc
+        return x_rec, zinb_pi, zinb_r, x_low, qc, s, c, s_mean, s_logvar, log_qc
 
     def reparam_trick(self, mu, log_sigma):
         device = mspec_lookup(self.spec, "device")
@@ -209,7 +211,7 @@ class MMIDAS(nn.Module):
             y_hard = (y_hard - y).detach() + y
             return y_hard.view(-1, latent_dim * categorical_dim)
 
-    def loss(self, recon_x, p_x, r_x, x, mu, log_sigma, qc, c, prior_c=[]):
+    def loss(self, x_rec, p_x, r_x, x, s_mean, s_logvar, qc, c, prior_c=[]):
         A = mspec_lookup(self.spec, "n_arms")
         K = mspec_lookup(self.spec, "n_categories")
         beta = mspec_lookup(self.spec, "beta")
@@ -225,20 +227,20 @@ class MMIDAS(nn.Module):
         loss_indep = []
         kl_cont = []
     
-        neg_joint_entropy = []
-        z_distance_rep = []
-        z_distance = []
+        entropy = [] # negative joint entropy between qc of two arms
+        qc_l2_dist = [] # Euclidean distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
+        qc_simplex_dist = []
         for a in range(A):
-            _loglikelihood = F.mse_loss(recon_x[a], x[a], reduction="mean") + len(x[a]) * np.log(2 * np.pi)
+            _loglikelihood = F.mse_loss(x_rec[a], x[a], reduction="mean") + len(x[a]) * np.log(2 * np.pi)
             if loss_fn == "MSE":
-                _l_rec = (0.5 * F.mse_loss(recon_x[a], x[a], reduction="sum") / len(x[a])) + (0.5 * F.binary_cross_entropy((recon_x[a] > 0.1).float(), (x[a] > 0.1).float()))
+                _l_rec = (0.5 * F.mse_loss(x_rec[a], x[a], reduction="sum") / len(x[a])) + (0.5 * F.binary_cross_entropy((x_rec[a] > 0.1).float(), (x[a] > 0.1).float()))
             elif loss_fn == "ZINB":
-                _l_rec = zinb_loss(recon_x[a], p_x[a], r_x[a], x[a], eps=eps)
+                _l_rec = zinb_loss(x_rec[a], p_x[a], r_x[a], x[a], eps=eps)
             else:
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
             if is_variational:
-                _kl_cont = (-0.5 * th.mean(1 + log_sigma[a] - mu[a].pow(2) - log_sigma[a].exp(), dim=0)).sum()
+                _kl_cont = (-0.5 * th.mean(1 + s_logvar[a] - s_mean[a].pow(2) - s_logvar[a].exp(), dim=0)).sum()
                 _loss_indep = _l_rec + beta * _kl_cont
             else:
                 _kl_cont = [0.0]
@@ -257,30 +259,29 @@ class MMIDAS(nn.Module):
                 var_qc_b = qc[b].var(0)
                 var_qc_b_inv = ((1 / (var_qc_b + eps)).repeat(len(qc[b]), 1).sqrt())
 
-                _neg_joint_entropy = (th.sum(qc[a] * log_qc_a, dim=-1)).mean() + (th.sum(qc[b] * log_qc_b, dim=-1)).mean()
-                _z_distance_rep = (th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()
-                _z_distance = (th.norm((log_qc_a * var_qc_a_inv) - (log_qc_b * var_qc_b_inv), p=2, dim=1).pow(2)).mean()
+                _entropy = (th.sum(qc[a] * log_qc_a, dim=-1)).mean() + (th.sum(qc[b] * log_qc_b, dim=-1)).mean()
+                _qc_l2_dist = (th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()
+                _qc_simplex_dist = (th.norm((log_qc_a * var_qc_a_inv) - (log_qc_b * var_qc_b_inv), p=2, dim=1).pow(2)).mean()
 
-                neg_joint_entropy.append(_neg_joint_entropy)
-                z_distance_rep.append(_z_distance_rep) # Euclidean distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
-                z_distance.append(_z_distance)
+                entropy.append(_entropy)
+                qc_l2_dist.append(_qc_l2_dist)
+                qc_simplex_dist.append(_qc_simplex_dist)
 
             if is_ref_prior:
                 print("warning: enabling a prior is untested!")
                 n_comb = max(A * (A + 1) / 2, 1)
                 scaler = A
-                z_distance_rep.append((th.norm((c[a] - prior_c), p=2, dim=1).pow(2)).mean()) # Euclidean distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
+                qc_l2_dist.append((th.norm((c[a] - prior_c), p=2, dim=1).pow(2)).mean())
                 tmp_entropy = (th.sum(qc[a] * log_qc_a, dim=-1)).mean()
-                neg_joint_entropy.append(tmp_entropy)
+                entropy.append(tmp_entropy)
                 qc_bin = self.gumbel_softmax(qc[a], 1, K, 1, hard=True, gumble_noise=False)
-                z_distance.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
-            else:
-                n_comb = max(A * (A - 1) / 2, 1)
-                scaler = max((A - 1), 1)
+                qc_simplex_dist.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
 
+        n_comb = max(A * (A - 1) / 2, 1)
+        scaler = max((A - 1), 1)
         loss_joint = (
-            lam * sum(z_distance)
-            + sum(neg_joint_entropy)
+            lam * sum(qc_simplex_dist)
+            + sum(entropy)
             + n_comb * ((K / 2) * (np.log(2 * np.pi)) - 0.5 * np.log(2 * lam))
         )
 
@@ -290,14 +291,13 @@ class MMIDAS(nn.Module):
             loss,
             l_rec,
             loss_joint,
-            sum(neg_joint_entropy) / n_comb,
-            sum(z_distance) / n_comb,
-            sum(z_distance_rep) / n_comb,
+            mean(entropy),
+            mean(qc_simplex_dist),
+            mean(qc_l2_dist),
             kl_cont,
             var_qc_a.min(),
             loglikelihood,
         )
-
 
 def zinb_loss(rec_x, x_p, x_r, X, eps=1e-6):
     X_dim = X.size(-1)
