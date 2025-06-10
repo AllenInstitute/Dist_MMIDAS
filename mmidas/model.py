@@ -244,16 +244,16 @@ class MMIDAS(nn.Module):
 
             log_qc_a = th.log(qc[a] + eps)
             var_qc_a = qc[a].var(0)
-            var_qc_inv_a = (1 / (var_qc_a + eps)).repeat(len(qc[a]), 1).sqrt()
+            var_qc_a_inv = (1 / (var_qc_a + eps)).repeat(len(qc[a]), 1).sqrt()
             for b in range(a + 1, A):
-                log_qz[1] = th.log(qc[b] + eps)
-                tmp_entropy = (th.sum(qc[a] * log_qc_a, dim=-1)).mean() + (th.sum(qc[b] * log_qz[1], dim=-1)).mean()
+                log_qc_b = th.log(qc[b] + eps)
+                tmp_entropy = (th.sum(qc[a] * log_qc_a, dim=-1)).mean() + (th.sum(qc[b] * log_qc_b, dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
-                var_qz1 = qc[b].var(0)
-                var_qz_inv[1] = ((1 / (var_qz1 + eps)).repeat(len(qc[b]), 1).sqrt())
+                var_qc_b = qc[b].var(0)
+                var_qc_b_inv = ((1 / (var_qc_b + eps)).repeat(len(qc[b]), 1).sqrt())
 
                 z_distance_rep.append((th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()) # Euclidean distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
-                z_distance.append((th.norm((log_qc_a * var_qc_inv_a) - (log_qz[1] * var_qz_inv[1]), p=2, dim=1).pow(2)).mean())
+                z_distance.append((th.norm((log_qc_a * var_qc_a_inv) - (log_qc_b * var_qc_b_inv), p=2, dim=1).pow(2)).mean())
 
             if is_ref_prior:
                 print("warning: enabling a prior is untested!")
