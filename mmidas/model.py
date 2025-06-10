@@ -415,3 +415,39 @@ def _make_mmidas(spec: MMIDASSpec) -> nn.Module:
         momentum=mspec_lookup(spec, "momentum"),
         loss_mode=mspec_lookup(spec, "loss_fn"),
     )
+
+"""
+TODO
+- [x] Implement `make-mnist` 
+- [x] Implement `make-dsprites` 
+- [ ] Add random seed for model/dataset creation
+- [ ] Draft manuscript in `docs/` folder
+- [ ] Remove `scripts` directory
+- [ ] Remove `notebooks` directory
+- [x] Remove `build` directory
+- [ ] Remove `dist` directory
+- [ ] Move `linreg.lpy`, `logreg.lpy`, `vae.lpy`, `kmeans`, `EM` to `model.lpy`
+- [ ] How do I use `hypothesis` tests for deep learning code?
+- [ ] Add `summary.csv` for experiments
+- [ ] Implement experiment for training Huggingface VAE on MNIST
+- [ ] Implement experiment for training Huggingface VAE on dsprites
+- [ ] Implement from scratch VAE
+- [ ] Implement experiemnt for training from scratch VAE on MNIST
+- [ ] Implement experiment for training from scratch VAE on dsprites
+- [ ] Clean implementation of MMIDAS train() function
+- [ ] Implement experiment training MMIDAS on MNIST
+- [ ] Implement experiment training MMIDAS on dsprites
+
+- [ ] Implement experiment for training MMIDAS on FSDP
+- [ ] Implement SimpleFSDP
+- [ ] Rewrite MMIDAS train() function
+- [ ] Implement vectorized MMIDAS forward pass
+- [ ] Implement vectorized MMIDAS loss
+- [ ] Clean implementation of VAE-GAN on MNIST
+- [ ] Clean implementation of MMIDAS on MNIST
+- [ ] Implement CLI script for running model
+- [ ] Implement `sbatch` script for running `fsdp_tutorial.py` on SLURM
+- [ ] Cleanup MMIDAS evaluation code
+- [x] Install Fira Code on Doom Emacs
+
+"""
