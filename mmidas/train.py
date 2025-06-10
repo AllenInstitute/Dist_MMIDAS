@@ -42,14 +42,15 @@ def train_mmidas(model, solver, train_loader, test_loader, spec):
 
         n_samples = len(xs)
         dt = time.time() - tic
-        return {
+        ret = {
             'loss': loss.item(),
-            'loss_rec_0': loss_rec[0].item(),
-            'loss_rec_1': loss_rec[1].item(),
             'loss_joint': loss_joint.item(),
-            'throughput': n_samples / dt, # it/s
-            'dt': dt * 1000.0  # ms
         }
+        for i in range(n_arms):
+            ret[f'loss_rec_{i}'] = loss_rec[i].item()
+        ret['throughput'] = n_samples / dt  # it/s
+        ret['dt'] = dt * 1000.0
+        return ret
     t0 = time.time()
     step = 0
     with wandb.init(entity='', project='switchvae', config=spec) as run:
