@@ -227,15 +227,9 @@ class MMIDAS(nn.Module):
         neg_joint_entropy, z_distance_rep, z_distance = [], [], []
 
         for a in range(A):
-            loglikelihood[a] = F.mse_loss(
-                recon_x[a], x[a], reduction="mean"
-            ) + x[a].size(0) * np.log(2 * np.pi)
+            loglikelihood[a] = F.mse_loss(recon_x[a], x[a], reduction="mean") + x[a].size(0) * np.log(2 * np.pi)
             if loss_fn == "MSE":
-                l_rec[a] = (
-                    0.5
-                    * F.mse_loss(recon_x[a], x[a], reduction="sum")
-                    / (x[a].size(0))
-                )
+                l_rec[a] = (0.5 * F.mse_loss(recon_x[a], x[a], reduction="sum") / (x[a].size(0)))
                 rec_bin = th.where(recon_x[a] > 0.1, 1.0, 0.0)
                 x_bin = th.where(x[a] > 0.1, 1.0, 0.0)
                 l_rec[a] += 0.5 * F.binary_cross_entropy(rec_bin, x_bin)
@@ -247,16 +241,7 @@ class MMIDAS(nn.Module):
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
             if is_variational:
-                kl_cont[a] = (
-                    -0.5
-                    * th.mean(
-                        1
-                        + log_sigma[a]
-                        - mu[a].pow(2)
-                        - log_sigma[a].exp(),
-                        dim=0,
-                    )
-                ).sum()
+                kl_cont[a] = (-0.5 * th.mean(1 + log_sigma[a] - mu[a].pow(2) - log_sigma[a].exp(), dim=0)).sum()
                 loss_indep[a] = l_rec[a] + beta * kl_cont[a]
             else:
                 loss_indep[a] = l_rec[a]
@@ -284,29 +269,17 @@ class MMIDAS(nn.Module):
                 z_distance_rep.append(
                     (th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()
                 )
-                z_distance.append(
-                    (
-                        th.norm(
-                            (log_qz[0] * var_qz_inv[0]) - (log_qz[1] * var_qz_inv[1]),
-                            p=2,
-                            dim=1,
-                        ).pow(2)
-                    ).mean()
-                )
+                z_distance.append((th.norm((log_qz[0] * var_qz_inv[0]) - (log_qz[1] * var_qz_inv[1]), p=2, dim=1).pow(2)).mean())
 
             if is_ref_prior:
                 n_comb = max(A * (A + 1) / 2, 1)
                 scaler = A
                 # distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
                 # Euclidean distance
-                z_distance_rep.append(
-                    (th.norm((c[a] - prior_c), p=2, dim=1).pow(2)).mean()
-                )
+                z_distance_rep.append((th.norm((c[a] - prior_c), p=2, dim=1).pow(2)).mean())
                 tmp_entropy = (th.sum(qc[a] * log_qz[0], dim=-1)).mean()
                 neg_joint_entropy.append(tmp_entropy)
-                qc_bin = self.gumbel_softmax(
-                    qc[a], 1, K, 1, hard=True, gumble_noise=False
-                )
+                qc_bin = self.gumbel_softmax(qc[a], 1, K, 1, hard=True, gumble_noise=False)
                 z_distance.append(lam_pc * F.binary_cross_entropy(qc_bin, prior_c))
             else:
                 n_comb = max(A * (A - 1) / 2, 1)
