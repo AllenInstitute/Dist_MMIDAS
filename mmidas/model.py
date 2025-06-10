@@ -220,26 +220,34 @@ class MMIDAS(nn.Module):
         is_ref_prior = mspec_lookup(self.spec, "is_ref_prior")
         is_variational = mspec_lookup(self.spec, "is_variational")
 
-        loss_indep, kl_cont = [None] * A, [None] * A
-        l_rec = [None] * A
-        loglikelihood = [None] * A
-        neg_joint_entropy, z_distance_rep, z_distance = [], [], []
-
+        loglikelihood = []
+        l_rec = []
+        loss_indep = []
+        kl_cont = []
+    
+        neg_joint_entropy = []
+        z_distance_rep = []
+        z_distance = []
         for a in range(A):
-            loglikelihood[a] = F.mse_loss(recon_x[a], x[a], reduction="mean") + len(x[a]) * np.log(2 * np.pi)
+            _loglikelihood = F.mse_loss(recon_x[a], x[a], reduction="mean") + len(x[a]) * np.log(2 * np.pi)
             if loss_fn == "MSE":
-                l_rec[a] = (0.5 * F.mse_loss(recon_x[a], x[a], reduction="sum") / len(x[a])) + (0.5 * F.binary_cross_entropy((recon_x[a] > 0.1).float(), (x[a] > 0.1).float()))
+                _l_rec = (0.5 * F.mse_loss(recon_x[a], x[a], reduction="sum") / len(x[a])) + (0.5 * F.binary_cross_entropy((recon_x[a] > 0.1).float(), (x[a] > 0.1).float()))
             elif loss_fn == "ZINB":
-                l_rec[a] = zinb_loss(recon_x[a], p_x[a], r_x[a], x[a])
+                _l_rec = zinb_loss(recon_x[a], p_x[a], r_x[a], x[a], eps=eps)
             else:
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
             if is_variational:
-                kl_cont[a] = (-0.5 * th.mean(1 + log_sigma[a] - mu[a].pow(2) - log_sigma[a].exp(), dim=0)).sum()
-                loss_indep[a] = l_rec[a] + beta * kl_cont[a]
+                _kl_cont = (-0.5 * th.mean(1 + log_sigma[a] - mu[a].pow(2) - log_sigma[a].exp(), dim=0)).sum()
+                _loss_indep = _l_rec + beta * _kl_cont
             else:
-                loss_indep[a] = l_rec[a]
-                kl_cont[a] = [0.0]
+                _kl_cont = [0.0]
+                _loss_indep = _l_rec
+
+            loglikelihood.append(_loglikelihood)
+            l_rec.append(_l_rec)
+            kl_cont.append(_kl_cont)
+            loss_indep.append(_loss_indep)
 
             log_qc_a = th.log(qc[a] + eps)
             var_qc_a = qc[a].var(0)
@@ -250,10 +258,12 @@ class MMIDAS(nn.Module):
                 var_qc_b_inv = ((1 / (var_qc_b + eps)).repeat(len(qc[b]), 1).sqrt())
 
                 _neg_joint_entropy = (th.sum(qc[a] * log_qc_a, dim=-1)).mean() + (th.sum(qc[b] * log_qc_b, dim=-1)).mean()
-                neg_joint_entropy.append(_neg_joint_entropy)
+                _z_distance_rep = (th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()
+                _z_distance = (th.norm((log_qc_a * var_qc_a_inv) - (log_qc_b * var_qc_b_inv), p=2, dim=1).pow(2)).mean()
 
-                z_distance_rep.append((th.norm((c[a] - c[b]), p=2, dim=1).pow(2)).mean()) # Euclidean distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
-                z_distance.append((th.norm((log_qc_a * var_qc_a_inv) - (log_qc_b * var_qc_b_inv), p=2, dim=1).pow(2)).mean())
+                neg_joint_entropy.append(_neg_joint_entropy)
+                z_distance_rep.append(_z_distance_rep) # Euclidean distance between z_1 and z_2 i.e., ||z_1 - z_2||^2
+                z_distance.append(_z_distance)
 
             if is_ref_prior:
                 print("warning: enabling a prior is untested!")
