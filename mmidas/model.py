@@ -227,16 +227,11 @@ class MMIDAS(nn.Module):
         neg_joint_entropy, z_distance_rep, z_distance = [], [], []
 
         for a in range(A):
-            loglikelihood[a] = F.mse_loss(recon_x[a], x[a], reduction="mean") + x[a].size(0) * np.log(2 * np.pi)
+            loglikelihood[a] = F.mse_loss(recon_x[a], x[a], reduction="mean") + len(x[a]) * np.log(2 * np.pi)
             if loss_fn == "MSE":
-                l_rec[a] = (0.5 * F.mse_loss(recon_x[a], x[a], reduction="sum") / (x[a].size(0)))
-                rec_bin = th.where(recon_x[a] > 0.1, 1.0, 0.0)
-                x_bin = th.where(x[a] > 0.1, 1.0, 0.0)
-                l_rec[a] += 0.5 * F.binary_cross_entropy(rec_bin, x_bin)
+                l_rec[a] = (0.5 * F.mse_loss(recon_x[a], x[a], reduction="sum") / len(x[a])) + (0.5 * F.binary_cross_entropy((recon_x[a] > 0.1).float(), (x[a] > 0.1).float()))
             elif loss_fn == "ZINB":
-                l_rec[a] = zinb_loss(
-                    recon_x[a], p_x[a], r_x[a], x[a]
-                )
+                l_rec[a] = zinb_loss(recon_x[a], p_x[a], r_x[a], x[a])
             else:
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
