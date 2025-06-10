@@ -118,10 +118,9 @@ class MMIDAS(nn.Module):
         recon_x = [None] * n_arms
         zinb_pi = [None] * n_arms
         zinb_r = [None] * n_arms
-        p_x = [None] * n_arms
         s, c = [None] * n_arms, [None] * n_arms
         mu, log_var = [None] * n_arms, [None] * n_arms
-        qc, alr_qc = [None] * n_arms, [None] * n_arms
+        qc = [None] * n_arms
         x_low, log_qc = [None] * n_arms, [None] * n_arms
 
         for a in range(n_arms):
