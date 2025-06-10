@@ -220,12 +220,11 @@ class MMIDAS(nn.Module):
         is_ref_prior = mspec_lookup(self.spec, "is_ref_prior")
         is_variational = mspec_lookup(self.spec, "is_variational")
 
-        loss_indep, KLD_cont = [None] * A, [None] * A
+        loss_indep, kl_cont = [None] * A, [None] * A
         log_qz, l_rec = [None] * A, [None] * A
         var_qz_inv = [None] * A
         loglikelihood = [None] * A
-        norm_size, n_cat = c[0].size()
-        neg_joint_entropy, z_distance_rep, z_distance, dist_a = [], [], [], []
+        neg_joint_entropy, z_distance_rep, z_distance = [], [], []
 
         for arm_a in range(A):
             loglikelihood[arm_a] = F.mse_loss(
@@ -248,7 +247,7 @@ class MMIDAS(nn.Module):
                 raise NotImplementedError(f"Unknown loss function: {loss_fn}")
 
             if is_variational:
-                KLD_cont[arm_a] = (
+                kl_cont[arm_a] = (
                     -0.5
                     * th.mean(
                         1
@@ -258,10 +257,10 @@ class MMIDAS(nn.Module):
                         dim=0,
                     )
                 ).sum()
-                loss_indep[arm_a] = l_rec[arm_a] + beta * KLD_cont[arm_a]
+                loss_indep[arm_a] = l_rec[arm_a] + beta * kl_cont[arm_a]
             else:
                 loss_indep[arm_a] = l_rec[arm_a]
-                KLD_cont[arm_a] = [0.0]
+                kl_cont[arm_a] = [0.0]
 
             log_qz[0] = th.log(qc[arm_a] + eps)
             var_qz0 = qc[arm_a].var(0)
@@ -328,7 +327,7 @@ class MMIDAS(nn.Module):
             sum(neg_joint_entropy) / n_comb,
             sum(z_distance) / n_comb,
             sum(z_distance_rep) / n_comb,
-            KLD_cont,
+            kl_cont,
             var_qz0.min(),
             loglikelihood,
         )
