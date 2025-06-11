@@ -24,8 +24,8 @@ def train_augmenter(netA, netD, dataloader, parameters, device, print_every=None
     mseDist = nn.MSELoss()
 
     # Set Adam optimiser for discriminator and augmenter
-    optimD = optim.Adam([{'params': netD.parameters()}], lr=parameters['learning_rate'])
-    optimA = optim.Adam([{'params': netA.parameters()}], lr=parameters['learning_rate'])
+    optimD = optim.AdamW([{'params': netD.parameters()}], lr=parameters['learning_rate'])
+    optimA = optim.AdamW([{'params': netA.parameters()}], lr=parameters['learning_rate'])
 
     real_label = 1.
     fake_label = 0.
