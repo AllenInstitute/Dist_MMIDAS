@@ -3,13 +3,14 @@ import time
 import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
+import tqdm
 
 from mmidas.augmentation.aug_utils import *
 from mmidas.augmentation.networks import *
 
 eps = 1e-4
 
-def train_augmenter(netA, netD, dataloader, parameters, device):
+def train_augmenter(netA, netD, dataloader, parameters, device, print_every=None):
 
     iter_num = len(dataloader)
 
@@ -32,13 +33,18 @@ def train_augmenter(netA, netD, dataloader, parameters, device):
     D_losses = []
     b_size = parameters['batch_size']
 
+    step = 0
+
+    pbar = tqdm.tqdm(total=parameters['num_epochs'], desc='Training', unit='it', leave=True)
     for epoch in range(parameters['num_epochs']):
+    # for epoch in range(parameters['num_epochs']):
         epoch_start_time = time.time()
         A_loss_e, D_loss_e = 0, 0
         gen_loss_e, recon_loss_e = 0, 0
         triplet_loss_e = 0
         n_adv = 0
         for i, (data, _) in enumerate(dataloader, 0):
+            tic = time.time()
             data_bin = 0. * data
             data_bin[data > eps] = 1.
 
@@ -116,7 +122,8 @@ def train_augmenter(netA, netD, dataloader, parameters, device):
                      parameters['lambda'][3] * recon_loss
             A_loss.backward()
             optimA.step()
-
+            dt = (time.time() - tic)
+            throughput = len(data) / dt
             A_losses.append(A_loss.data.item())
             D_losses.append(D_loss.data.item())
             A_loss_e += A_loss.data.item()
@@ -124,6 +131,19 @@ def train_augmenter(netA, netD, dataloader, parameters, device):
             gen_loss_e += gen_loss.data.item()
             recon_loss_e += recon_loss.data.item()
             triplet_loss_e += triplet_loss.data.item()
+            step += 1
+            if print_every is not None and step % print_every == 0:
+                print(f'step = {step} | aug_loss = {A_losses[-1]:.4f} | disc_loss = {D_losses[-1]:.4f} | gen loss = {gen_loss.data.item():.4f} | rec_loss = {recon_loss.data.item():.4f} | triplet_loss = {triplet_loss.data.item():.4f} | throughout = {throughput:.2f}it/s | dt = {dt*1000:.2f}ms')
+            pbar.set_postfix({
+                'aug_loss': f'{A_losses[-1]:.4f}',
+                'disc_loss': f'{D_losses[-1]:.4f}',
+                'gen_loss': f'{gen_loss.data.item():.4f}',
+                'rec_loss': f'{recon_loss.data.item():.4f}',
+                'triplet_loss': f'{triplet_loss.data.item():.4f}',
+                'throughput': f'{throughput:.2f}it/s',
+                'dt': f'{dt*1000:.2f}ms'
+                })
+            }
 
         A_loss_epoch = A_loss_e / (iter_num)
         D_loss_epoch = D_loss_e / (iter_num )
@@ -131,11 +151,11 @@ def train_augmenter(netA, netD, dataloader, parameters, device):
         recon_loss_epoch = recon_loss_e / (iter_num)
         triplet_loss_epoch = triplet_loss_e / (iter_num)
 
-        print('=====> Epoch:{}, Generator Loss: {:.4f}, Discriminator Loss: {'
-              ':.4f}, Recon Loss: {:.4f}, Trip Loss: '
-              '{:.4f}, Elapsed Time:{:.2f}'.format(epoch, A_loss_epoch,
-                    D_loss_epoch, recon_loss_epoch, triplet_loss_epoch,
-                    time.time() - epoch_start_time))
+        # print('=====> Epoch:{}, Generator Loss: {:.4f}, Discriminator Loss: {'
+        #       ':.4f}, Recon Loss: {:.4f}, Trip Loss: '
+        #       '{:.4f}, Elapsed Time:{:.2f}'.format(epoch, A_loss_epoch,
+        #             D_loss_epoch, recon_loss_epoch, triplet_loss_epoch,
+        #             time.time() - epoch_start_time))
 
     # Save trained models
     if parameters['save']:
@@ -157,3 +177,8 @@ def train_augmenter(netA, netD, dataloader, parameters, device):
         plt.ylabel("Loss")
         plt.legend()
         plt.savefig(parameters['saving_path'] + 'loss_curve.png')
+
+    return {
+        'aug_loss': A_losses,
+        'disc_loss': D_losses,
+    }

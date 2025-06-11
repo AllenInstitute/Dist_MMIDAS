@@ -46,8 +46,8 @@ class Augmenter(nn.Module):
         self.fc10 = nn.Linear(input_dim // 5, input_dim // 5)
         self.batch_fc10 = nn.BatchNorm1d(num_features=self.fc10.out_features, eps=1e-10, momentum=moment, affine=False)
         self.fc11 = nn.Linear(self.fc10.out_features, input_dim)
-        if self.n_zim > 1:
-            self.fc11_p = nn.Linear(self.fc10.out_features, input_dim)
+        # if self.n_zim > 1:
+        #     self.fc11_p = nn.Linear(self.fc10.out_features, input_dim)
 
     def forward(self, x, noise, device):
         x = F.relu(self.batch_fc1(self.fc1(self.dp(x))))
